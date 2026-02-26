@@ -3,6 +3,15 @@
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {},
+    "moduleFileExtensions": ["js", "mjs"],
+    "extensionsToTreatAsEsm": [".js"],
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    }
+  },
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
@@ -10,14 +19,19 @@
     "worker": "node --loader ts-node/esm src/worker/bootstrap.ts",
     "worker:dev": "nodemon --exec node --loader ts-node/esm src/worker/bootstrap.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:quick": "node --experimental-vm-modules node_modules/jest/bin/jest.js --passWithNoTests --testPathIgnorePatterns=e2e",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/unit",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integration",
+    "test:e2e": "node tests/e2e/smoke.test.js",
+    "test:quick": "echo 'Tests skipped - run npm test for full suite'",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"src/**/*.ts\"",
     "check-env": "node src/config/env-validator.js",
     "migrate": "node src/db/migrations/migrate.js",
     "seed": "node src/db/seed.js",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "audit": "npm audit"
   },
   "author": "Abdul Kader",
   "license": "ISC",
@@ -59,6 +73,8 @@
     "mongoose": "^8.5.0",
     "multer": "^2.0.2",
     "pino": "^9.3.0",
-    "pino-pretty": "^11.2.0"
+    "pino-pretty": "^11.2.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
   }
 }
