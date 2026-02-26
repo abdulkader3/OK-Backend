@@ -12,6 +12,7 @@ import authRoutes from "./routes/auth.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import ledgerRoutes from "./routes/ledger.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
+import syncRoutes from "./routes/sync.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import userRoutes from "./routes/user.routes.js";
 
@@ -64,6 +65,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use("/api/sync", syncRoutes);
 
 app.use(globalErrorHandler);
 

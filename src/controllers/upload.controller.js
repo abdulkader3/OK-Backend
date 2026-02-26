@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
+import { AuditLog } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
@@ -35,11 +36,35 @@ const uploadReceipt = asyncHandler(async (req, res, _next) => {
     ],
   });
 
+  await AuditLog.create({
+    operation: "create",
+    collection: "uploads",
+    docId: result.public_id,
+    userId: req.user._id,
+    userEmail: req.user.email,
+    after: {
+      url: result.secure_url,
+      publicId: result.public_id,
+      width: result.width,
+      height: result.height,
+      format: result.format,
+      bytes: result.bytes,
+    },
+    metadata: {
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+    },
+  });
+
   res.status(201).json({
     success: true,
     data: {
       url: result.secure_url,
       publicId: result.public_id,
+      width: result.width,
+      height: result.height,
+      format: result.format,
+      bytes: result.bytes,
     },
     message: "File uploaded successfully",
   });

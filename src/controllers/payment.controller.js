@@ -5,21 +5,27 @@ import { asyncHandler } from "../utils/asyncHandlers.js";
 
 const createPayment = asyncHandler(async (req, res, _next) => {
   const { id: ledgerId } = req.params;
-  const { amount, type, method, note, receiptUrl, idempotencyKey } = req.body;
+  const { amount, type, method, note, receiptUrl, idempotencyKey: bodyIdempotencyKey, quick, clientTempId, recordedAtClient } = req.body;
+  
+  const idempotencyKey = req.headers["idempotency-key"] || bodyIdempotencyKey;
+  const isQuick = quick === true || quick === "true";
 
   if (!amount || amount <= 0) {
     throw new ApiErrors(400, "Valid payment amount is required");
   }
 
-  if (idempotencyKey) {
-    const existingPayment = await Payment.findOne({ idempotencyKey });
-    if (existingPayment) {
-      return res.status(200).json({
-        success: true,
-        data: { payment: existingPayment },
-        message: "Existing payment returned (idempotency)",
-      });
-    }
+  if (!idempotencyKey) {
+    throw new ApiErrors(400, "Idempotency-Key header or idempotencyKey in body is required");
+  }
+
+  const existingPayment = await Payment.findOne({ idempotencyKey });
+  if (existingPayment) {
+    return res.status(200).json({
+      success: true,
+      data: { payment: existingPayment },
+      message: "Existing payment returned (idempotency)",
+      idempotent: true,
+    });
   }
 
   const ledger = await Ledger.findById(ledgerId);
@@ -39,87 +45,52 @@ const createPayment = asyncHandler(async (req, res, _next) => {
   }
 
   const previousOutstanding = ledger.outstandingBalance;
-  let newOutstanding;
-
-  if (type === "refund") {
-    newOutstanding = previousOutstanding + amount;
-  } else {
-    newOutstanding = previousOutstanding - amount;
-  }
+  let newOutstanding = type === "refund" ? previousOutstanding + amount : previousOutstanding - amount;
 
   let payment;
+
+  const paymentData = {
+    ledgerId,
+    amount,
+    type: type || "payment",
+    method: method || "cash",
+    note,
+    receiptUrl,
+    recordedBy: req.user._id,
+    recordedAt: new Date(),
+    previousOutstanding,
+    newOutstanding,
+    idempotencyKey,
+    offline: false,
+    syncStatus: "synced",
+    clientTempId: clientTempId || null,
+    recordedAtClient: recordedAtClient || null,
+  };
 
   if (mongoose.connection.readyState === 1) {
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
-        const [createdPayment] = await Payment.create(
-          [
-            {
-              ledgerId,
-              amount,
-              type: type || "payment",
-              method: method || "cash",
-              note,
-              receiptUrl,
-              recordedBy: req.user._id,
-              recordedAt: new Date(),
-              previousOutstanding,
-              newOutstanding,
-              idempotencyKey,
-              offline: false,
-              syncStatus: "synced",
-            },
-          ],
-          { session }
-        );
-
-        await Ledger.findByIdAndUpdate(
-          ledgerId,
-          { outstandingBalance: newOutstanding },
-          { session }
-        );
-
+        const [createdPayment] = await Payment.create([paymentData], { session });
+        await Ledger.findByIdAndUpdate(ledgerId, { outstandingBalance: newOutstanding }, { session });
         payment = createdPayment;
-
-        await AuditLog.create(
-          [
-            {
-              operation: "create",
-              collection: "payments",
-              docId: payment._id,
-              userId: req.user._id,
-              userEmail: req.user.email,
-              before: null,
-              after: payment.toObject(),
-              metadata: { ledgerId, amount, previousOutstanding, newOutstanding },
-            },
-          ],
-          { session }
-        );
+        await AuditLog.create([{
+          operation: "create",
+          collection: "payments",
+          docId: payment._id,
+          userId: req.user._id,
+          userEmail: req.user.email,
+          before: null,
+          after: payment.toObject(),
+          metadata: { ledgerId, amount, previousOutstanding, newOutstanding, quick: isQuick },
+        }], { session });
       });
     } finally {
       session.endSession();
     }
   } else {
-    payment = await Payment.create({
-      ledgerId,
-      amount,
-      type: type || "payment",
-      method: method || "cash",
-      note,
-      receiptUrl,
-      recordedBy: req.user._id,
-      recordedAt: new Date(),
-      previousOutstanding,
-      newOutstanding,
-      idempotencyKey,
-      offline: false,
-      syncStatus: "synced",
-    });
-
+    payment = await Payment.create(paymentData);
     await Ledger.findByIdAndUpdate(ledgerId, { outstandingBalance: newOutstanding });
-
     await AuditLog.create({
       operation: "create",
       collection: "payments",
@@ -128,7 +99,7 @@ const createPayment = asyncHandler(async (req, res, _next) => {
       userEmail: req.user.email,
       before: null,
       after: payment.toObject(),
-      metadata: { ledgerId, amount, previousOutstanding, newOutstanding },
+      metadata: { ledgerId, amount, previousOutstanding, newOutstanding, quick: isQuick },
     });
   }
 
