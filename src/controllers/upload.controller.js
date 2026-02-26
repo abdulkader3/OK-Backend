@@ -20,7 +20,7 @@ const uploadReceipt = asyncHandler(async (req, res, _next) => {
     req.user.permissions?.canCreateLedger;
 
   if (!canUpload) {
-    throw new ApiErrors(403, "You don't have permission to upload files");
+    throw new ApiErrors(403, `User role '${req.user.role}' does not have upload permission. Add canRecordPayment or canCreateLedger permission.`);
   }
 
   const b64 = Buffer.from(req.file.buffer).toString("base64");

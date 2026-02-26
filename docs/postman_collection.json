@@ -31,7 +31,19 @@
       "type": "string"
     }
   ],
+
+
+
+
+
+
+
+
+
+
   "item": [
+
+
     {
       "name": "Authentication",
       "item": [
@@ -77,6 +89,13 @@
             }
           ]
         },
+
+
+
+
+
+
+        
         {
           "name": "Login",
           "request": {
@@ -116,6 +135,12 @@
         }
       ]
     },
+
+
+
+
+
+
     {
       "name": "Ledgers",
       "item": [
@@ -168,6 +193,12 @@
             }
           ]
         },
+
+
+
+
+
+
         {
           "name": "Get All Ledgers",
           "request": {
@@ -209,6 +240,17 @@
             }
           ]
         },
+
+
+
+
+
+
+
+
+
+
+
         {
           "name": "Get Ledger by ID",
           "request": {
@@ -238,6 +280,16 @@
             }
           ]
         },
+
+
+
+
+
+
+
+
+
+
         {
           "name": "Update Ledger",
           "request": {
@@ -272,6 +324,16 @@
         }
       ]
     },
+
+
+
+
+
+
+
+
+
+    
     {
       "name": "Payments",
       "item": [
@@ -332,6 +394,18 @@
             }
           ]
         },
+
+
+
+
+
+
+
+
+
+
+
+
         {
           "name": "Record Duplicate Payment (Idempotency Test)",
           "request": {
@@ -366,6 +440,15 @@
             }
           ]
         },
+
+
+
+
+
+
+
+
+
         {
           "name": "Get All Payments",
           "request": {
@@ -401,6 +484,18 @@
         }
       ]
     },
+
+
+
+
+
+
+
+
+
+
+
+
     {
       "name": "Dashboard",
       "item": [
@@ -459,6 +554,15 @@
         }
       ]
     },
+
+
+
+
+
+
+
+
+
     {
       "name": "Users",
       "item": [
@@ -499,6 +603,17 @@
             }
           ]
         },
+
+
+
+
+
+
+
+
+
+
+
         {
           "name": "Update User Permissions",
           "request": {
@@ -537,6 +652,16 @@
         }
       ]
     },
+
+
+
+
+
+
+
+
+
+
     {
       "name": "Uploads",
       "item": [
@@ -557,7 +682,8 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": ""
+                  "src": "REPLACE_WITH_ACTUAL_FILE_PATH",
+                  "description": "Click here to select a file from your computer"
                 }
               ]
             }
@@ -581,6 +707,18 @@
         }
       ]
     },
+
+
+
+
+
+
+
+
+
+
+
+
     {
       "name": "Audit",
       "item": [

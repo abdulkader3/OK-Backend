@@ -47,8 +47,8 @@ const updateUserPermissions = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(404, "User not found");
   }
 
-  if (targetUser.role === "owner") {
-    throw new ApiErrors(403, "Cannot modify owner permissions");
+  if (targetUser.role === "owner" && targetUser._id.toString() !== req.user._id.toString()) {
+    throw new ApiErrors(403, "Cannot modify other owner's permissions");
   }
 
   if (req.user.role !== "owner" && targetUser.role === "admin") {
