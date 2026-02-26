@@ -1,0 +1,853 @@
+openapi: 3.0.3
+info:
+  title: OK Backend API
+  description: Expense tracking backend API with authentication, ledgers, and payments
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:4000/api
+    description: Development server
+  - url: https://api.okbackend.com/api
+    description: Production server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: refreshToken
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [owner, admin, staff]
+        permissions:
+          type: object
+          properties:
+            canCreateLedger:
+              type: boolean
+            canEditLedger:
+              type: boolean
+            canDeleteLedger:
+              type: boolean
+            canRecordPayment:
+              type: boolean
+            canViewAllLedgers:
+              type: boolean
+            canManageStaff:
+              type: boolean
+        active:
+          type: boolean
+        phone:
+          type: string
+        company:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Ledger:
+      type: object
+      properties:
+        _id:
+          type: string
+        ownerId:
+          type: string
+        type:
+          type: string
+          enum: [owes_me, i_owe]
+        counterpartyName:
+          type: string
+        counterpartyContact:
+          type: string
+        initialAmount:
+          type: number
+        outstandingBalance:
+          type: number
+        currency:
+          type: string
+          default: USD
+        dueDate:
+          type: string
+          format: date
+        priority:
+          type: string
+          enum: [low, medium, high]
+        notes:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              uploadedAt:
+                type: string
+                format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Payment:
+      type: object
+      properties:
+        _id:
+          type: string
+        ledgerId:
+          type: string
+        amount:
+          type: number
+        type:
+          type: string
+          enum: [payment, adjustment, refund]
+        method:
+          type: string
+          enum: [cash, bank, other]
+        note:
+          type: string
+        receiptUrl:
+          type: string
+        recordedBy:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+        previousOutstanding:
+          type: number
+        newOutstanding:
+          type: number
+        idempotencyKey:
+          type: string
+        offline:
+          type: boolean
+        syncStatus:
+          type: string
+          enum: [pending, synced, failed]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AuditLog:
+      type: object
+      properties:
+        _id:
+          type: string
+        operation:
+          type: string
+          enum: [create, update, delete, login, logout]
+        collection:
+          type: string
+        docId:
+          type: string
+        userId:
+          type: string
+        userEmail:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        before:
+          type: object
+        after:
+          type: object
+        changes:
+          type: array
+          items:
+            type: object
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalOwedToMe:
+          type: number
+        totalIOwe:
+          type: number
+        overdueCount:
+          type: integer
+        highPriorityCount:
+          type: integer
+        recentLedgers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ledger'
+        dueLedgers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ledger'
+
+  parameters:
+    page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+      description: Page number for pagination
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+      description: Number of items per page
+    userId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: User ID
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 6
+                phone:
+                  type: string
+                company:
+                  type: string
+                role:
+                  type: string
+                  enum: [owner, admin, staff]
+                  default: owner
+      responses:
+        201:
+          description: User registered successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  user:
+                    _id: "507f1f77bcf86cd799439011"
+                    name: "John Doe"
+                    email: "john@example.com"
+                    role: "owner"
+                  tokens:
+                    access_token: "eyJhbGciOiJIUzI1NiIs..."
+                    refresh_token: "eyJhbGciOiJIUzI1NiIs..."
+                message: "User registered successfully"
+        400:
+          $ref: '#/components/responses/ValidationError'
+        409:
+          $ref: '#/components/responses/Conflict'
+
+  /auth/login:
+    post:
+      summary: Login user
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        200:
+          description: Login successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: refreshToken=eyJhbGciOiJIUzI1NiIs...; HttpOnly; Secure; SameSite=Strict; Path=/
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  user:
+                    _id: "507f1f77bcf86cd799439011"
+                    name: "John Doe"
+                    email: "john@example.com"
+                    role: "owner"
+                  tokens:
+                    access_token: "eyJhbGciOiJIUzI1NiIs..."
+                message: "Login successful"
+        401:
+          $ref: '#/components/responses/Unauthorized'
+
+  /users:
+    get:
+      summary: List all users
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        200:
+          description: Users list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  users:
+                    - _id: "507f1f77bcf86cd799439011"
+                      name: "John Doe"
+                      email: "john@example.com"
+                      role: "owner"
+                  pagination:
+                    page: 1
+                    limit: 20
+                    total: 1
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+
+  /users/{id}/permissions:
+    patch:
+      summary: Update user permissions
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                permissions:
+                  type: object
+                  properties:
+                    canCreateLedger:
+                      type: boolean
+                    canEditLedger:
+                      type: boolean
+                    canDeleteLedger:
+                      type: boolean
+                    canRecordPayment:
+                      type: boolean
+                    canViewAllLedgers:
+                      type: boolean
+                    canManageStaff:
+                      type: boolean
+      responses:
+        200:
+          description: Permissions updated
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  permissions:
+                    canCreateLedger: true
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+
+  /ledgers:
+    post:
+      summary: Create a new ledger
+      tags: [Ledgers]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - counterpartyName
+                - initialAmount
+              properties:
+                type:
+                  type: string
+                  enum: [owes_me, i_owe]
+                counterpartyName:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                counterpartyContact:
+                  type: string
+                initialAmount:
+                  type: number
+                  minimum: 0
+                currency:
+                  type: string
+                  default: USD
+                dueDate:
+                  type: string
+                  format: date
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+                notes:
+                  type: string
+                  maxLength: 2000
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        201:
+          description: Ledger created
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  ledger:
+                    _id: "507f1f77bcf86cd799439011"
+                    type: "owes_me"
+                    counterpartyName: "ABC Corp"
+                    initialAmount: 1000
+                    outstandingBalance: 1000
+        400:
+          $ref: '#/components/responses/ValidationError'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+
+    get:
+      summary: List ledgers
+      tags: [Ledgers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [owes_me, i_owe]
+        - name: ownerId
+          in: query
+          schema:
+            type: string
+        - name: dueDateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dueDateTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [low, medium, high]
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        200:
+          description: Ledgers list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  ledgers: []
+                  pagination:
+                    page: 1
+                    limit: 20
+                    total: 0
+
+  /ledgers/{id}:
+    get:
+      summary: Get ledger by ID
+      tags: [Ledgers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ledgerId'
+      responses:
+        200:
+          description: Ledger details
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  ledger: {}
+                  recentPayments: []
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Update ledger
+      tags: [Ledgers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ledgerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                counterpartyName:
+                  type: string
+                counterpartyContact:
+                  type: string
+                dueDate:
+                  type: string
+                  format: date
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+                notes:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        200:
+          description: Ledger updated
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+
+  /ledgers/{id}/payments:
+    post:
+      summary: Record a payment
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ledgerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+              properties:
+                amount:
+                  type: number
+                  minimum: 0.01
+                type:
+                  type: string
+                  enum: [payment, adjustment, refund]
+                  default: payment
+                method:
+                  type: string
+                  enum: [cash, bank, other]
+                  default: cash
+                note:
+                  type: string
+                receiptUrl:
+                  type: string
+                idempotencyKey:
+                  type: string
+      responses:
+        201:
+          description: Payment recorded
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  payment:
+                    _id: "507f1f77bcf86cd799439011"
+                    amount: 500
+                    previousOutstanding: 1000
+                    newOutstanding: 500
+        400:
+          $ref: '#/components/responses/ValidationError'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+
+  /payments:
+    get:
+      summary: List payments
+      tags: [Payments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - name: ledgerId
+          in: query
+          schema:
+            type: string
+        - name: recordedBy
+          in: query
+          schema:
+            type: string
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        200:
+          description: Payments list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  payments: []
+
+  /dashboard/summary:
+    get:
+      summary: Get dashboard summary
+      tags: [Dashboard]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Dashboard summary
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  totalOwedToMe: 5000
+                  totalIOwe: 2000
+                  overdueCount: 3
+                  highPriorityCount: 5
+                  recentLedgers: []
+                  dueLedgers: []
+
+  /uploads/receipt:
+    post:
+      summary: Upload receipt image
+      tags: [Uploads]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        201:
+          description: Upload successful
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  url: "https://res.cloudinary.com/.../receipt.jpg"
+        400:
+          $ref: '#/components/responses/ValidationError'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+
+  /audit/{entityId}:
+    get:
+      summary: Get audit trail for entity
+      tags: [Audit]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entityId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: collection
+          in: query
+          schema:
+            type: string
+            enum: [users, ledgers, payments]
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        200:
+          description: Audit logs
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  logs: []
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          example:
+            success: false
+            message: "Validation failed"
+            errors:
+              - field: "email"
+                message: "Invalid email format"
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          example:
+            success: false
+            message: "Authentication required"
+            error:
+              code: "UNAUTHORIZED"
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          example:
+            success: false
+            message: "Insufficient permissions"
+            error:
+              code: "FORBIDDEN"
+
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          example:
+            success: false
+            message: "Resource not found"
+            error:
+              code: "NOT_FOUND"
+
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          example:
+            success: false
+            message: "Email already registered"
+            error:
+              code: "CONFLICT"
+
+    ServerError:
+      description: Server error
+      content:
+        application/json:
+          example:
+            success: false
+            message: "Internal server error"
+            error:
+              code: "SERVER_ERROR"

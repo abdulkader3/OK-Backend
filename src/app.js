@@ -7,6 +7,14 @@ import mongoose from "mongoose";
 import { globalErrorHandler } from "./middlewares/error-handler.middleware.js";
 import { requestLogger } from "./middlewares/request-logger.middleware.js";
 
+import auditRoutes from "./routes/audit.routes.js";
+import authRoutes from "./routes/auth.routes.js";
+import dashboardRoutes from "./routes/dashboard.routes.js";
+import ledgerRoutes from "./routes/ledger.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
+import uploadRoutes from "./routes/upload.routes.js";
+import userRoutes from "./routes/user.routes.js";
+
 const app = express();
 
 app.use(
@@ -48,6 +56,14 @@ app.get("/health", (req, res) => {
     version: "1.0.0",
   });
 });
+
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/ledgers", ledgerRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/audit", auditRoutes);
+app.use("/api/uploads", uploadRoutes);
 
 app.use(globalErrorHandler);
 

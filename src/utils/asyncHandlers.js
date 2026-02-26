@@ -4,4 +4,6 @@ const asyncHandlers = (reqHandler) => {
   };
 };
 
-export { asyncHandlers };
+const asyncHandler = asyncHandlers;
+
+export { asyncHandlers, asyncHandler };
