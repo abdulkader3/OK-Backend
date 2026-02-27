@@ -141,7 +141,7 @@ Generic audit trail for all changes.
   _id: ObjectId,
   operation: String,         // Enum: ['create', 'update', 'delete', 'login', 'logout']
   collection: String,        // Name of collection (e.g., 'users', 'ledgers', 'payments')
-  docId: ObjectId,          // Reference to document
+  docId: Mixed,              // Reference to document (ObjectId or string like Cloudinary public_id)
   userId: ObjectId,        // Ref: User who performed action
   userEmail: String,        // Snapshot of user email for historical accuracy
   timestamp: Date,           // When action occurred, indexed

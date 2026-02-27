@@ -12,7 +12,7 @@ const auditLogSchema = new mongoose.Schema(
       required: true,
     },
     docId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.Mixed,
       required: true,
     },
     userId: {
