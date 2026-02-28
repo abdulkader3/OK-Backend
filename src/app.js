@@ -12,6 +12,7 @@ import { requestLogger } from "./middlewares/request-logger.middleware.js";
 
 import auditRoutes from "./routes/audit.routes.js";
 import authRoutes from "./routes/auth.routes.js";
+import contactRoutes from "./routes/contact.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import ledgerRoutes from "./routes/ledger.routes.js";
 import metricsRoutes from "./routes/metrics.routes.js";
@@ -109,6 +110,7 @@ const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 app.use("/api/auth", authRoutes);
+app.use("/api/contacts", contactRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/ledgers", ledgerRoutes);
 app.use("/api/payments", paymentRoutes);

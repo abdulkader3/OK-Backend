@@ -3,8 +3,8 @@
 ## Base URL
 
 ```
-Development: http://localhost:4000
-Production: https://your-domain.com
+Development:
+Production: https://ok-backend.onrender.com
 ```
 
 ---
