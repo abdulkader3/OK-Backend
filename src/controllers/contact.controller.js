@@ -77,8 +77,6 @@ const getContacts = asyncHandler(async (req, res, _next) => {
 
   const total = await Contact.countDocuments(filter);
 
-  const contactIds = contacts.map((c) => c._id);
-
   const ledgerAggregation = await Ledger.aggregate([
     {
       $match: {
