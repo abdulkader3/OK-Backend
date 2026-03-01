@@ -274,4 +274,90 @@ const deleteLedger = asyncHandler(async (req, res, _next) => {
   });
 });
 
-export { createLedger, getLedgers, getLedgerById, updateLedger, deleteLedger };
+const addDebt = asyncHandler(async (req, res, _next) => {
+  const { id: ledgerId } = req.params;
+  const { amount, note } = req.body;
+
+  if (!amount || amount <= 0) {
+    throw new ApiErrors(400, "Valid amount is required");
+  }
+
+  const ledger = await Ledger.findById(ledgerId);
+
+  if (!ledger) {
+    throw new ApiErrors(404, "Ledger not found");
+  }
+
+  const canEdit =
+    ledger.ownerId.toString() === req.user._id.toString() ||
+    req.user.role === "owner" ||
+    req.user.role === "admin" ||
+    req.user.permissions?.canEditLedger;
+
+  if (!canEdit) {
+    throw new ApiErrors(
+      403,
+      "You don't have permission to add debt to this ledger"
+    );
+  }
+
+  const previousInitialAmount = ledger.initialAmount;
+  const previousOutstanding = ledger.outstandingBalance;
+
+  const newInitialAmount = previousInitialAmount + amount;
+  const newOutstanding = previousOutstanding + amount;
+
+  ledger.initialAmount = newInitialAmount;
+  ledger.outstandingBalance = newOutstanding;
+
+  await ledger.save();
+
+  const payment = await Payment.create({
+    ledgerId: ledger._id,
+    amount,
+    type: "adjustment",
+    method: "other",
+    note: note || "Added debt",
+    recordedBy: req.user._id,
+    recordedAt: new Date(),
+    previousOutstanding,
+    newOutstanding,
+    idempotencyKey: `add-debt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    offline: false,
+    syncStatus: "synced",
+  });
+
+  await AuditLog.create({
+    operation: "update",
+    collection: "ledgers",
+    docId: ledger._id,
+    userId: req.user._id,
+    userEmail: req.user.email,
+    before: {
+      initialAmount: previousInitialAmount,
+      outstandingBalance: previousOutstanding,
+    },
+    after: {
+      initialAmount: newInitialAmount,
+      outstandingBalance: newOutstanding,
+    },
+    metadata: { action: "add_debt", amount, note },
+  });
+
+  await payment.populate("recordedBy", "name email");
+
+  res.status(201).json({
+    success: true,
+    data: { ledger, payment },
+    message: "Debt added successfully",
+  });
+});
+
+export {
+  createLedger,
+  getLedgers,
+  getLedgerById,
+  updateLedger,
+  deleteLedger,
+  addDebt,
+};
