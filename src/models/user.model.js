@@ -48,6 +48,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    profileImage: {
+      url: { type: String },
+      publicId: { type: String },
+    },
     refreshToken: {
       type: String,
     },
