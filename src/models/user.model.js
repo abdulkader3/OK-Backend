@@ -63,6 +63,7 @@ const userSchema = new mongoose.Schema(
 userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ role: 1 });
 userSchema.index({ active: 1 });
+userSchema.index({ company: 1 });
 
 userSchema.pre("save", async function (next) {
   if (!this.isModified("passwordHash")) return next();

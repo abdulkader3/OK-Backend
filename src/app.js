@@ -17,8 +17,8 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import ledgerRoutes from "./routes/ledger.routes.js";
 import metricsRoutes from "./routes/metrics.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
+import staffRoutes from "./routes/staff.routes.js";
 import syncRoutes from "./routes/sync.routes.js";
-import uploadRoutes from "./routes/upload.routes.js";
 import userRoutes from "./routes/user.routes.js";
 
 cloudinary.config({
@@ -36,17 +36,19 @@ app.use(
   })
 );
 
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
     },
-  },
-  crossOriginEmbedderPolicy: false,
-}));
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
@@ -65,8 +67,13 @@ const getCloudinaryHealth = async () => {
 };
 
 app.get("/health", async (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? "ok" : mongoose.connection.readyState === 2 ? "connecting" : "disconnected";
-  
+  const dbStatus =
+    mongoose.connection.readyState === 1
+      ? "ok"
+      : mongoose.connection.readyState === 2
+        ? "connecting"
+        : "disconnected";
+
   let cloudinaryStatus = "not_configured";
   if (process.env.CLOUDINARY_API_NAME && process.env.CLOUDINARY_API_KEY) {
     cloudinaryStatus = await getCloudinaryHealth();
@@ -112,6 +119,7 @@ app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 app.use("/api/auth", authRoutes);
 app.use("/api/contacts", contactRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/staff", staffRoutes);
 app.use("/api/ledgers", ledgerRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/dashboard", dashboardRoutes);
