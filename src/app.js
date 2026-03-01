@@ -19,6 +19,7 @@ import metricsRoutes from "./routes/metrics.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import staffRoutes from "./routes/staff.routes.js";
 import syncRoutes from "./routes/sync.routes.js";
+import uploadRoutes from "./routes/upload.routes.js";
 import userRoutes from "./routes/user.routes.js";
 
 cloudinary.config({

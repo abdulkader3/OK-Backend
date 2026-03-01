@@ -1,4 +1,4 @@
-import { Contact, Ledger, AuditLog } from "../models/index.js";
+import { Contact, Ledger, AuditLog, User } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
@@ -39,20 +39,20 @@ const getContacts = asyncHandler(async (req, res, _next) => {
 
   const filter = {};
 
-  if (req.user.role === "owner" || req.user.role === "admin") {
-    if (req.query.ownerId) {
-      filter.ownerId = req.query.ownerId;
-    } else {
-      filter.$or = [
-        { ownerId: req.user._id },
-        { createdBy: req.user._id },
-      ];
-    }
-  } else if (!req.user.permissions?.canViewAllLedgers) {
+  const isAdminOrOwner = req.user.role === "owner" || req.user.role === "admin";
+  const canViewAll = req.user.permissions?.canViewAllLedgers;
+
+  if (isAdminOrOwner || canViewAll) {
+    const companyUsers = await User.find({ company: req.user.company }).select(
+      "_id"
+    );
+    const companyUserIds = companyUsers.map((u) => u._id);
     filter.$or = [
-      { ownerId: req.user._id },
-      { createdBy: req.user._id },
+      { ownerId: { $in: companyUserIds } },
+      { createdBy: { $in: companyUserIds } },
     ];
+  } else {
+    filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
   }
 
   if (req.query.search) {
@@ -88,10 +88,14 @@ const getContacts = asyncHandler(async (req, res, _next) => {
       $group: {
         _id: "$counterpartyName",
         totalOwesMe: {
-          $sum: { $cond: [{ $eq: ["$type", "owes_me"] }, "$outstandingBalance", 0] },
+          $sum: {
+            $cond: [{ $eq: ["$type", "owes_me"] }, "$outstandingBalance", 0],
+          },
         },
         totalIOwe: {
-          $sum: { $cond: [{ $eq: ["$type", "i_owe"] }, "$outstandingBalance", 0] },
+          $sum: {
+            $cond: [{ $eq: ["$type", "i_owe"] }, "$outstandingBalance", 0],
+          },
         },
         ledgerCount: { $sum: 1 },
       },
@@ -136,7 +140,10 @@ const getContacts = asyncHandler(async (req, res, _next) => {
 });
 
 const getContactById = asyncHandler(async (req, res, _next) => {
-  const contact = await Contact.findById(req.params.id).populate("createdBy", "name email");
+  const contact = await Contact.findById(req.params.id).populate(
+    "createdBy",
+    "name email"
+  );
 
   if (!contact) {
     throw new ApiErrors(404, "Contact not found");
@@ -250,7 +257,10 @@ const deleteContact = asyncHandler(async (req, res, _next) => {
     req.user.role !== "owner" &&
     req.user.role !== "admin"
   ) {
-    throw new ApiErrors(403, "You don't have permission to delete this contact");
+    throw new ApiErrors(
+      403,
+      "You don't have permission to delete this contact"
+    );
   }
 
   const relatedLedgers = await Ledger.countDocuments({
@@ -282,4 +292,10 @@ const deleteContact = asyncHandler(async (req, res, _next) => {
   });
 });
 
-export { createContact, getContacts, getContactById, updateContact, deleteContact };
+export {
+  createContact,
+  getContacts,
+  getContactById,
+  updateContact,
+  deleteContact,
+};

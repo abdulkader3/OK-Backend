@@ -40,41 +40,63 @@ const register = asyncHandler(async (req, res, _next) => {
     role: finalRole,
   });
 
-  const { accessToken, refreshToken } = generateTokens(user._id);
+  const isAuthenticated = !!req.user;
+  const isFirstUserRegistration = isFirstUser;
 
-  user.refreshToken = refreshToken;
-  await user.save();
+  if (!isAuthenticated || isFirstUserRegistration) {
+    const { accessToken, refreshToken } = generateTokens(user._id);
 
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-  };
+    user.refreshToken = refreshToken;
+    await user.save();
 
-  await AuditLog.create({
-    operation: "create",
-    collection: "users",
-    docId: user._id,
-    userId: user._id,
-    userEmail: user.email,
-    after: user.toJSON(),
-  });
+    const options = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    };
 
-  res
-    .status(201)
-    .cookie("refreshToken", refreshToken, options)
-    .cookie("accessToken", accessToken, options)
-    .json({
+    await AuditLog.create({
+      operation: "create",
+      collection: "users",
+      docId: user._id,
+      userId: user._id,
+      userEmail: user.email,
+      after: user.toJSON(),
+    });
+
+    res
+      .status(201)
+      .cookie("refreshToken", refreshToken, options)
+      .cookie("accessToken", accessToken, options)
+      .json({
+        success: true,
+        data: {
+          user: user.toJSON(),
+          tokens: {
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          },
+        },
+        message: "User registered successfully",
+      });
+  } else {
+    await AuditLog.create({
+      operation: "create",
+      collection: "users",
+      docId: user._id,
+      userId: req.user._id,
+      userEmail: req.user.email,
+      after: user.toJSON(),
+    });
+
+    res.status(201).json({
       success: true,
       data: {
         user: user.toJSON(),
-        tokens: {
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        },
       },
-      message: "User registered successfully",
+      message: "Staff member created successfully",
     });
+  }
 });
 
 const login = asyncHandler(async (req, res, _next) => {
@@ -150,14 +172,10 @@ const logout = asyncHandler(async (req, res, _next) => {
     userAgent: req.get("user-agent"),
   });
 
-  res
-    .status(200)
-    .clearCookie("refreshToken")
-    .clearCookie("accessToken")
-    .json({
-      success: true,
-      message: "Logout successful",
-    });
+  res.status(200).clearCookie("refreshToken").clearCookie("accessToken").json({
+    success: true,
+    message: "Logout successful",
+  });
 });
 
 const refreshAccessToken = asyncHandler(async (req, res, _next) => {
@@ -175,7 +193,9 @@ const refreshAccessToken = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(401, "Invalid refresh token");
   }
 
-  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user._id);
+  const { accessToken, refreshToken: newRefreshToken } = generateTokens(
+    user._id
+  );
 
   user.refreshToken = newRefreshToken;
   await user.save();

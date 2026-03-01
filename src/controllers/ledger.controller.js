@@ -1,9 +1,19 @@
-import { Ledger, Payment, AuditLog } from "../models/index.js";
+import { Ledger, Payment, AuditLog, User } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
 const createLedger = asyncHandler(async (req, res, _next) => {
-  const { type, counterpartyName, counterpartyContact, initialAmount, currency, dueDate, priority, notes, tags } = req.body;
+  const {
+    type,
+    counterpartyName,
+    counterpartyContact,
+    initialAmount,
+    currency,
+    dueDate,
+    priority,
+    notes,
+    tags,
+  } = req.body;
 
   const ledger = await Ledger.create({
     ownerId: req.user._id,
@@ -43,20 +53,20 @@ const getLedgers = asyncHandler(async (req, res, _next) => {
 
   const filter = {};
 
-  if (req.user.role === "owner" || req.user.role === "admin") {
-    if (req.query.ownerId) {
-      filter.ownerId = req.query.ownerId;
-    } else {
-      filter.$or = [
-        { ownerId: req.user._id },
-        { createdBy: req.user._id },
-      ];
-    }
-  } else if (!req.user.permissions?.canViewAllLedgers) {
+  const isAdminOrOwner = req.user.role === "owner" || req.user.role === "admin";
+  const canViewAll = req.user.permissions?.canViewAllLedgers;
+
+  if (isAdminOrOwner || canViewAll) {
+    const companyUsers = await User.find({ company: req.user.company }).select(
+      "_id"
+    );
+    const companyUserIds = companyUsers.map((u) => u._id);
     filter.$or = [
-      { ownerId: req.user._id },
-      { createdBy: req.user._id },
+      { ownerId: { $in: companyUserIds } },
+      { createdBy: { $in: companyUserIds } },
     ];
+  } else {
+    filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
   }
 
   if (req.query.type) {
@@ -108,7 +118,10 @@ const getLedgers = asyncHandler(async (req, res, _next) => {
 });
 
 const getLedgerById = asyncHandler(async (req, res, _next) => {
-  const ledger = await Ledger.findById(req.params.id).populate("createdBy", "name email ownerId");
+  const ledger = await Ledger.findById(req.params.id).populate(
+    "createdBy",
+    "name email ownerId"
+  );
 
   if (!ledger) {
     throw new ApiErrors(404, "Ledger not found");
@@ -139,7 +152,14 @@ const getLedgerById = asyncHandler(async (req, res, _next) => {
 });
 
 const updateLedger = asyncHandler(async (req, res, _next) => {
-  const { counterpartyName, counterpartyContact, dueDate, priority, notes, tags } = req.body;
+  const {
+    counterpartyName,
+    counterpartyContact,
+    dueDate,
+    priority,
+    notes,
+    tags,
+  } = req.body;
 
   const ledger = await Ledger.findById(req.params.id);
 
@@ -161,7 +181,8 @@ const updateLedger = asyncHandler(async (req, res, _next) => {
   const before = ledger.toObject();
 
   if (counterpartyName) ledger.counterpartyName = counterpartyName;
-  if (counterpartyContact !== undefined) ledger.counterpartyContact = counterpartyContact;
+  if (counterpartyContact !== undefined)
+    ledger.counterpartyContact = counterpartyContact;
   if (dueDate !== undefined) ledger.dueDate = dueDate;
   if (priority) ledger.priority = priority;
   if (notes !== undefined) ledger.notes = notes;
@@ -171,13 +192,25 @@ const updateLedger = asyncHandler(async (req, res, _next) => {
 
   const changes = [];
   if (counterpartyName && before.counterpartyName !== counterpartyName) {
-    changes.push({ field: "counterpartyName", oldValue: before.counterpartyName, newValue: counterpartyName });
+    changes.push({
+      field: "counterpartyName",
+      oldValue: before.counterpartyName,
+      newValue: counterpartyName,
+    });
   }
   if (dueDate !== undefined && String(before.dueDate) !== String(dueDate)) {
-    changes.push({ field: "dueDate", oldValue: before.dueDate, newValue: dueDate });
+    changes.push({
+      field: "dueDate",
+      oldValue: before.dueDate,
+      newValue: dueDate,
+    });
   }
   if (priority && before.priority !== priority) {
-    changes.push({ field: "priority", oldValue: before.priority, newValue: priority });
+    changes.push({
+      field: "priority",
+      oldValue: before.priority,
+      newValue: priority,
+    });
   }
 
   await AuditLog.create({
@@ -218,7 +251,10 @@ const deleteLedger = asyncHandler(async (req, res, _next) => {
   const payments = await Payment.countDocuments({ ledgerId: ledger._id });
 
   if (payments > 0) {
-    throw new ApiErrors(400, "Cannot delete ledger with existing payments. Archive it instead.");
+    throw new ApiErrors(
+      400,
+      "Cannot delete ledger with existing payments. Archive it instead."
+    );
   }
 
   await Ledger.findByIdAndDelete(req.params.id);
