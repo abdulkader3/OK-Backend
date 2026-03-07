@@ -58,6 +58,11 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    monthlySalary: {
+      type: Number,
+      min: [0, "Salary cannot be negative"],
+      default: null,
+    },
   },
   {
     timestamps: true,

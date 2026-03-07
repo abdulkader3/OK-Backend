@@ -5,3 +5,4 @@ export { default as Payment } from "./payment.model.js";
 export { default as AuditLog } from "./auditlog.model.js";
 export { default as BigBoss } from "./bigboss.model.js";
 export { default as BigBossBill } from "./bigbossbill.model.js";
+export { default as SalaryPayment } from "./salarypayment.model.js";

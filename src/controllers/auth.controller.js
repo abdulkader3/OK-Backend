@@ -20,7 +20,8 @@ const generateTokens = (userId) => {
 };
 
 const register = asyncHandler(async (req, res, _next) => {
-  const { name, email, password, phone, company, role } = req.body;
+  const { name, email, password, phone, company, role, monthlySalary } =
+    req.body;
 
   const existingUser = await User.findOne({ email: email?.toLowerCase() });
   if (existingUser) {
@@ -31,14 +32,23 @@ const register = asyncHandler(async (req, res, _next) => {
   const isFirstUser = (await User.countDocuments()) === 0;
   const finalRole = isFirstUser ? "owner" : userRole;
 
-  const user = await User.create({
+  const userData = {
     name,
     email: email?.toLowerCase(),
     passwordHash: password,
     phone,
     company,
     role: finalRole,
-  });
+  };
+
+  if (
+    monthlySalary !== undefined &&
+    (finalRole === "admin" || finalRole === "staff")
+  ) {
+    userData.monthlySalary = parseFloat(monthlySalary) || null;
+  }
+
+  const user = await User.create(userData);
 
   const isAuthenticated = !!req.user;
   const isFirstUserRegistration = isFirstUser;
