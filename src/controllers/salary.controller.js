@@ -113,7 +113,18 @@ const getStaffSalaryHistory = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(403, "Access denied");
   }
 
-  const filter = { staffId };
+  let ownerId;
+  if (req.user.role === "owner") {
+    ownerId = req.user._id;
+  } else {
+    const companyOwner = await User.findOne({
+      company: req.user.company,
+      role: "owner",
+    });
+    ownerId = companyOwner?._id;
+  }
+
+  const filter = { staffId, ownerId };
   if (req.query.year) {
     filter.year = parseInt(req.query.year);
   }
@@ -167,8 +178,19 @@ const getStaffSalarySummary = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(403, "Access denied");
   }
 
+  let ownerId;
+  if (req.user.role === "owner") {
+    ownerId = req.user._id;
+  } else {
+    const companyOwner = await User.findOne({
+      company: req.user.company,
+      role: "owner",
+    });
+    ownerId = companyOwner?._id;
+  }
+
   const pipeline = [
-    { $match: { staffId: staff._id } },
+    { $match: { staffId: staff._id, ownerId: ownerId } },
     {
       $group: {
         _id: null,
@@ -182,7 +204,7 @@ const getStaffSalarySummary = asyncHandler(async (req, res, _next) => {
   const [summary] = await SalaryPayment.aggregate(pipeline);
 
   const byYearPipeline = [
-    { $match: { staffId: staff._id } },
+    { $match: { staffId: staff._id, ownerId: ownerId } },
     {
       $group: {
         _id: "$year",
@@ -279,15 +301,32 @@ const getMySalary = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(404, "User not found");
   }
 
-  const filter = { staffId: req.user._id };
+  const companyOwner = await User.findOne({
+    company: req.user.company,
+    role: "owner",
+  });
+
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 50;
+  const skip = (page - 1) * limit;
+
+  const filter = {
+    staffId: req.user._id,
+    ownerId: companyOwner?._id,
+  };
 
   if (req.query.year) {
     filter.year = parseInt(req.query.year);
   }
 
-  const payments = await SalaryPayment.find(filter)
-    .sort({ year: -1, month: -1 })
-    .populate("createdBy", "name email");
+  const [payments, total] = await Promise.all([
+    SalaryPayment.find(filter)
+      .sort({ year: -1, month: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate("createdBy", "name email"),
+    SalaryPayment.countDocuments(filter),
+  ]);
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
@@ -305,6 +344,12 @@ const getMySalary = asyncHandler(async (req, res, _next) => {
       payments,
       totalPaid,
       lastPaymentDate: lastPayment?.paidAt || null,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
     },
   });
 });
