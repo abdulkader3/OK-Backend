@@ -55,11 +55,10 @@ const getLedgers = asyncHandler(async (req, res, _next) => {
 
   const isAdminOrOwner = req.user.role === "owner" || req.user.role === "admin";
   const canViewAll = req.user.permissions?.canViewAllLedgers;
+  const company = req.user.company;
 
-  if (isAdminOrOwner || canViewAll) {
-    const companyUsers = await User.find({ company: req.user.company }).select(
-      "_id"
-    );
+  if ((isAdminOrOwner || canViewAll) && company) {
+    const companyUsers = await User.find({ company }).select("_id");
     const companyUserIds = companyUsers.map((u) => u._id);
     filter.$or = [
       { ownerId: { $in: companyUserIds } },
