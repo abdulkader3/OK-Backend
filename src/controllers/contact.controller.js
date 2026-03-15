@@ -6,7 +6,7 @@ const createContact = asyncHandler(async (req, res, _next) => {
   const { name, email, phone, address, notes, tags } = req.body;
 
   const contact = await Contact.create({
-    ownerId: req.user._id,
+    ownerId: req.user.ownerId || req.user._id,
     name,
     email,
     phone,

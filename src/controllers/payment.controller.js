@@ -5,8 +5,18 @@ import { asyncHandler } from "../utils/asyncHandlers.js";
 
 const createPayment = asyncHandler(async (req, res, _next) => {
   const { id: ledgerId } = req.params;
-  const { amount, type, method, note, receiptUrl, idempotencyKey: bodyIdempotencyKey, quick, clientTempId, recordedAtClient } = req.body;
-  
+  const {
+    amount,
+    type,
+    method,
+    note,
+    receiptUrl,
+    idempotencyKey: bodyIdempotencyKey,
+    quick,
+    clientTempId,
+    recordedAtClient,
+  } = req.body;
+
   const idempotencyKey = req.headers["idempotency-key"] || bodyIdempotencyKey;
   const isQuick = quick === true || quick === "true";
 
@@ -15,7 +25,10 @@ const createPayment = asyncHandler(async (req, res, _next) => {
   }
 
   if (!idempotencyKey) {
-    throw new ApiErrors(400, "Idempotency-Key header or idempotencyKey in body is required");
+    throw new ApiErrors(
+      400,
+      "Idempotency-Key header or idempotencyKey in body is required"
+    );
   }
 
   const existingPayment = await Payment.findOne({ idempotencyKey });
@@ -45,7 +58,10 @@ const createPayment = asyncHandler(async (req, res, _next) => {
   }
 
   const previousOutstanding = ledger.outstandingBalance;
-  let newOutstanding = type === "refund" ? previousOutstanding + amount : previousOutstanding - amount;
+  let newOutstanding =
+    type === "refund"
+      ? previousOutstanding + amount
+      : previousOutstanding - amount;
 
   let payment;
 
@@ -71,26 +87,45 @@ const createPayment = asyncHandler(async (req, res, _next) => {
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
-        const [createdPayment] = await Payment.create([paymentData], { session });
-        await Ledger.findByIdAndUpdate(ledgerId, { outstandingBalance: newOutstanding }, { session });
+        const [createdPayment] = await Payment.create([paymentData], {
+          session,
+        });
+        await Ledger.findByIdAndUpdate(
+          ledgerId,
+          { outstandingBalance: newOutstanding },
+          { session }
+        );
         payment = createdPayment;
-        await AuditLog.create([{
-          operation: "create",
-          collection: "payments",
-          docId: payment._id,
-          userId: req.user._id,
-          userEmail: req.user.email,
-          before: null,
-          after: payment.toObject(),
-          metadata: { ledgerId, amount, previousOutstanding, newOutstanding, quick: isQuick },
-        }], { session });
+        await AuditLog.create(
+          [
+            {
+              operation: "create",
+              collection: "payments",
+              docId: payment._id,
+              userId: req.user._id,
+              userEmail: req.user.email,
+              before: null,
+              after: payment.toObject(),
+              metadata: {
+                ledgerId,
+                amount,
+                previousOutstanding,
+                newOutstanding,
+                quick: isQuick,
+              },
+            },
+          ],
+          { session }
+        );
       });
     } finally {
       session.endSession();
     }
   } else {
     payment = await Payment.create(paymentData);
-    await Ledger.findByIdAndUpdate(ledgerId, { outstandingBalance: newOutstanding });
+    await Ledger.findByIdAndUpdate(ledgerId, {
+      outstandingBalance: newOutstanding,
+    });
     await AuditLog.create({
       operation: "create",
       collection: "payments",
@@ -99,7 +134,13 @@ const createPayment = asyncHandler(async (req, res, _next) => {
       userEmail: req.user.email,
       before: null,
       after: payment.toObject(),
-      metadata: { ledgerId, amount, previousOutstanding, newOutstanding, quick: isQuick },
+      metadata: {
+        ledgerId,
+        amount,
+        previousOutstanding,
+        newOutstanding,
+        quick: isQuick,
+      },
     });
   }
 
@@ -121,9 +162,33 @@ const getPayments = asyncHandler(async (req, res, _next) => {
 
   if (req.query.ledgerId) {
     filter.ledgerId = req.query.ledgerId;
+  } else {
+    const userId = req.user._id;
+    const ownerId = req.user.ownerId;
+    const canViewAll = req.user.permissions?.canViewAllLedgers;
+
+    let accessibleOwnerIds = [userId];
+    if (canViewAll && ownerId) {
+      accessibleOwnerIds.push(ownerId);
+    }
+
+    const { Ledger } = await import("../models/index.js");
+    const ledgers = await Ledger.find({
+      $or: [
+        { ownerId: { $in: accessibleOwnerIds } },
+        { createdBy: { $in: accessibleOwnerIds } },
+      ],
+    }).select("_id");
+
+    const ledgerIds = ledgers.map((l) => l._id);
+    filter.ledgerId = { $in: ledgerIds };
   }
 
-  if (req.user.role !== "owner" && req.user.role !== "admin" && !req.user.permissions?.canViewAllLedgers) {
+  if (
+    req.user.role !== "owner" &&
+    req.user.role !== "admin" &&
+    !req.user.permissions?.canViewAllLedgers
+  ) {
     filter.recordedBy = req.user._id;
   } else if (req.query.recordedBy) {
     filter.recordedBy = req.query.recordedBy;

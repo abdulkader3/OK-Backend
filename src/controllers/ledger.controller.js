@@ -16,7 +16,7 @@ const createLedger = asyncHandler(async (req, res, _next) => {
   } = req.body;
 
   const ledger = await Ledger.create({
-    ownerId: req.user._id,
+    ownerId: req.user.ownerId || req.user._id,
     type,
     counterpartyName,
     counterpartyContact,
