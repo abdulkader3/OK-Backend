@@ -63,6 +63,11 @@ const userSchema = new mongoose.Schema(
       min: [0, "Salary cannot be negative"],
       default: null,
     },
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -73,6 +78,7 @@ userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ role: 1 });
 userSchema.index({ active: 1 });
 userSchema.index({ company: 1 });
+userSchema.index({ ownerId: 1 });
 
 userSchema.pre("save", async function (next) {
   if (!this.isModified("passwordHash")) return next();

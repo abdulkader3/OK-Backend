@@ -1,27 +1,13 @@
-import { Ledger, User } from "../models/index.js";
+import { Ledger } from "../models/index.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
 const getDashboardSummary = asyncHandler(async (req, res, _next) => {
   const userId = req.user._id;
   const now = new Date();
 
-  const isAdminOrOwner = req.user.role === "owner" || req.user.role === "admin";
-  const canViewAll = req.user.permissions?.canViewAllLedgers;
-  const company = req.user.company;
-
-  let ownerFilter;
-  if ((isAdminOrOwner || canViewAll) && company) {
-    const companyUsers = await User.find({ company }).select("_id");
-    const companyUserIds = companyUsers.map((u) => u._id);
-    ownerFilter = {
-      $or: [
-        { ownerId: { $in: companyUserIds } },
-        { createdBy: { $in: companyUserIds } },
-      ],
-    };
-  } else {
-    ownerFilter = { $or: [{ ownerId: userId }, { createdBy: userId }] };
-  }
+  const ownerFilter = {
+    $or: [{ ownerId: userId }, { createdBy: userId }],
+  };
 
   const [owesMeLedgers, iOweLedgers, overdueLedgers, highPriorityLedgers] =
     await Promise.all([

@@ -1,4 +1,4 @@
-import { Ledger, Payment, AuditLog, User } from "../models/index.js";
+import { Ledger, Payment, AuditLog } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
@@ -53,20 +53,7 @@ const getLedgers = asyncHandler(async (req, res, _next) => {
 
   const filter = {};
 
-  const isAdminOrOwner = req.user.role === "owner" || req.user.role === "admin";
-  const canViewAll = req.user.permissions?.canViewAllLedgers;
-  const company = req.user.company;
-
-  if ((isAdminOrOwner || canViewAll) && company) {
-    const companyUsers = await User.find({ company }).select("_id");
-    const companyUserIds = companyUsers.map((u) => u._id);
-    filter.$or = [
-      { ownerId: { $in: companyUserIds } },
-      { createdBy: { $in: companyUserIds } },
-    ];
-  } else {
-    filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
-  }
+  filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
 
   if (req.query.type) {
     filter.type = req.query.type;

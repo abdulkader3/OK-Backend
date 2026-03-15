@@ -1,4 +1,4 @@
-import { Contact, Ledger, AuditLog, User } from "../models/index.js";
+import { Contact, Ledger, AuditLog } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
@@ -39,21 +39,7 @@ const getContacts = asyncHandler(async (req, res, _next) => {
 
   const filter = {};
 
-  const isAdminOrOwner = req.user.role === "owner" || req.user.role === "admin";
-  const canViewAll = req.user.permissions?.canViewAllLedgers;
-
-  if (isAdminOrOwner || canViewAll) {
-    const companyUsers = await User.find({ company: req.user.company }).select(
-      "_id"
-    );
-    const companyUserIds = companyUsers.map((u) => u._id);
-    filter.$or = [
-      { ownerId: { $in: companyUserIds } },
-      { createdBy: { $in: companyUserIds } },
-    ];
-  } else {
-    filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
-  }
+  filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
 
   if (req.query.search) {
     filter.$or = [

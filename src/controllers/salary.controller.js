@@ -117,11 +117,7 @@ const getStaffSalaryHistory = asyncHandler(async (req, res, _next) => {
   if (req.user.role === "owner") {
     ownerId = req.user._id;
   } else {
-    const companyOwner = await User.findOne({
-      company: req.user.company,
-      role: "owner",
-    });
-    ownerId = companyOwner?._id;
+    ownerId = req.user.ownerId;
   }
 
   const filter = { staffId, ownerId };
@@ -301,18 +297,13 @@ const getMySalary = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(404, "User not found");
   }
 
-  const companyOwner = await User.findOne({
-    company: req.user.company,
-    role: "owner",
-  });
-
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const skip = (page - 1) * limit;
 
   const filter = {
     staffId: req.user._id,
-    ownerId: companyOwner?._id,
+    ownerId: req.user.ownerId,
   };
 
   if (req.query.year) {

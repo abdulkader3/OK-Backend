@@ -41,6 +41,17 @@ const register = asyncHandler(async (req, res, _next) => {
     role: finalRole,
   };
 
+  const isAuthenticated = !!req.user;
+  const isFirstUserRegistration = isFirstUser;
+
+  if (
+    isAuthenticated &&
+    !isFirstUserRegistration &&
+    (finalRole === "admin" || finalRole === "staff")
+  ) {
+    userData.ownerId = req.user._id;
+  }
+
   if (
     monthlySalary !== undefined &&
     (finalRole === "admin" || finalRole === "staff")
@@ -49,9 +60,6 @@ const register = asyncHandler(async (req, res, _next) => {
   }
 
   const user = await User.create(userData);
-
-  const isAuthenticated = !!req.user;
-  const isFirstUserRegistration = isFirstUser;
 
   if (!isAuthenticated || isFirstUserRegistration) {
     const { accessToken, refreshToken } = generateTokens(user._id);
