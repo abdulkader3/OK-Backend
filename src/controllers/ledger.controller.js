@@ -55,30 +55,11 @@ const getLedgers = asyncHandler(async (req, res, _next) => {
 
   filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
 
-  if (req.query.type) {
-    filter.type = req.query.type;
-  }
-
-  if (req.query.priority) {
-    filter.priority = req.query.priority;
-  }
-
-  if (req.query.dueDateFrom || req.query.dueDateTo) {
-    filter.dueDate = {};
-    if (req.query.dueDateFrom) {
-      filter.dueDate.$gte = new Date(req.query.dueDateFrom);
-    }
-    if (req.query.dueDateTo) {
-      filter.dueDate.$lte = new Date(req.query.dueDateTo);
-    }
-  }
-
-  if (req.query.search) {
-    filter.$or = [
-      { counterpartyName: { $regex: req.query.search, $options: "i" } },
-      { notes: { $regex: req.query.search, $options: "i" } },
-      { tags: { $in: [new RegExp(req.query.search, "i")] } },
-    ];
+  if (req.user.permissions?.canViewAllLedgers && req.user.ownerId) {
+    filter.$or.push(
+      { ownerId: req.user.ownerId },
+      { createdBy: req.user.ownerId }
+    );
   }
 
   const ledgers = await Ledger.find(filter)

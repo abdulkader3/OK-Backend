@@ -41,13 +41,11 @@ const getContacts = asyncHandler(async (req, res, _next) => {
 
   filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
 
-  if (req.query.search) {
-    filter.$or = [
-      { name: { $regex: req.query.search, $options: "i" } },
-      { email: { $regex: req.query.search, $options: "i" } },
-      { phone: { $regex: req.query.search, $options: "i" } },
-      { tags: { $in: [new RegExp(req.query.search, "i")] } },
-    ];
+  if (req.user.permissions?.canViewAllLedgers && req.user.ownerId) {
+    filter.$or.push(
+      { ownerId: req.user.ownerId },
+      { createdBy: req.user.ownerId }
+    );
   }
 
   if (req.query.tags) {

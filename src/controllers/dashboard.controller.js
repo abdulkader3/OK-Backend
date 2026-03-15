@@ -5,9 +5,16 @@ const getDashboardSummary = asyncHandler(async (req, res, _next) => {
   const userId = req.user._id;
   const now = new Date();
 
-  const ownerFilter = {
+  let ownerFilter = {
     $or: [{ ownerId: userId }, { createdBy: userId }],
   };
+
+  if (req.user.permissions?.canViewAllLedgers && req.user.ownerId) {
+    ownerFilter.$or.push(
+      { ownerId: req.user.ownerId },
+      { createdBy: req.user.ownerId }
+    );
+  }
 
   const [owesMeLedgers, iOweLedgers, overdueLedgers, highPriorityLedgers] =
     await Promise.all([
