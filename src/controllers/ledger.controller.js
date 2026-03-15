@@ -55,7 +55,7 @@ const getLedgers = asyncHandler(async (req, res, _next) => {
 
   filter.$or = [{ ownerId: req.user._id }, { createdBy: req.user._id }];
 
-  if (req.user.permissions?.canViewAllLedgers && req.user.ownerId) {
+  if (req.user.ownerId) {
     filter.$or.push(
       { ownerId: req.user.ownerId },
       { createdBy: req.user.ownerId }

@@ -165,10 +165,9 @@ const getPayments = asyncHandler(async (req, res, _next) => {
   } else {
     const userId = req.user._id;
     const ownerId = req.user.ownerId;
-    const canViewAll = req.user.permissions?.canViewAllLedgers;
 
     let accessibleOwnerIds = [userId];
-    if (canViewAll && ownerId) {
+    if (ownerId) {
       accessibleOwnerIds.push(ownerId);
     }
 

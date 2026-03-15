@@ -9,7 +9,7 @@ const getDashboardSummary = asyncHandler(async (req, res, _next) => {
     $or: [{ ownerId: userId }, { createdBy: userId }],
   };
 
-  if (req.user.permissions?.canViewAllLedgers && req.user.ownerId) {
+  if (req.user.ownerId) {
     ownerFilter.$or.push(
       { ownerId: req.user.ownerId },
       { createdBy: req.user.ownerId }
