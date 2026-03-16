@@ -348,8 +348,8 @@ const getMySalary = asyncHandler(async (req, res, _next) => {
 const getSalaryPaymentById = asyncHandler(async (req, res, _next) => {
   const payment = await SalaryPayment.findById(req.params.id)
     .populate("staffId", "name email monthlySalary")
-    .populate("createdBy", "name email")
-    .populate("ownerId", "name email");
+    .populate("createdBy", "name email _id")
+    .populate("ownerId", "name email _id");
 
   if (!payment) {
     throw new ApiErrors(404, "Salary payment not found");
@@ -366,7 +366,7 @@ const getSalaryPaymentById = asyncHandler(async (req, res, _next) => {
 
   res.status(200).json({
     success: true,
-    data: { payment },
+    data: { salaryPayment: payment },
   });
 });
 

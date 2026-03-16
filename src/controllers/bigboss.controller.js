@@ -353,13 +353,14 @@ const getBills = asyncHandler(async (req, res, _next) => {
 const getBillById = asyncHandler(async (req, res, _next) => {
   const bill = await BigBossBill.findById(req.params.billId)
     .populate("bigBossId", "name description")
-    .populate("createdBy", "name email");
+    .populate("createdBy", "name email _id")
+    .populate("ownerId", "name email _id");
 
   if (!bill) {
     throw new ApiErrors(404, "Bill not found");
   }
 
-  if (bill.ownerId.toString() !== req.user._id.toString()) {
+  if (bill.ownerId._id.toString() !== req.user._id.toString()) {
     throw new ApiErrors(403, "Access denied");
   }
 
