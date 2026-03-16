@@ -1,0 +1,1205 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "OK Backend API",
+    "description": "Expense tracking backend with Local Sales Management Module\n\n## Authentication\nAll endpoints require JWT Bearer token authentication.\n- Header: `Authorization: Bearer <token>`\n- Cookie fallback: `accessToken`\n\n## Sync Conventions\n- `idempotencyKey`: Required for sync operations to prevent duplicates\n- `clientTempId`: Client's local ID for mapping responses\n- `recordedAtClient`: Client timestamp (ISO8601)\n- `syncStatus`: \"synced\" | \"pending\" | \"failed\"\n\n## Batch Limits\n- Max 100 operations per /api/sync/batch request\n\n## Upload Limits\n- Max file size: 5MB\n- Allowed MIME: image/* only",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000",
+      "description": "Development server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "ownerId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439012"
+          },
+          "name": {
+            "type": "string",
+            "example": "Lux Soap",
+            "maxLength": 200
+          },
+          "price": {
+            "type": "number",
+            "example": 80,
+            "minimum": 0
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "https://res.cloudinary.com/xxx/image.jpg"
+          },
+          "clientTempId": {
+            "type": "string",
+            "nullable": true,
+            "example": "local-uuid-123"
+          },
+          "syncStatus": {
+            "type": "string",
+            "enum": ["synced", "pending", "failed"],
+            "example": "synced"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["name", "price"]
+      },
+      "SaleItem": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientProductId": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "example": "Lux Soap"
+          },
+          "price": {
+            "type": "number",
+            "example": 80
+          },
+          "quantity": {
+            "type": "number",
+            "example": 2,
+            "minimum": 1
+          },
+          "subtotal": {
+            "type": "number",
+            "example": 160
+          }
+        },
+        "required": ["name", "price", "quantity", "subtotal"]
+      },
+      "Sale": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439100"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ledgerId": {
+            "type": "string",
+            "nullable": true,
+            "example": "507f1f77bcf86cd799439099"
+          },
+          "totalAmount": {
+            "type": "number",
+            "example": 280
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleItem"
+            }
+          },
+          "clientTempId": {
+            "type": "string",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "syncStatus": {
+            "type": "string",
+            "enum": ["synced", "pending", "failed"]
+          },
+          "ledgerDebtCreated": {
+            "type": "boolean",
+            "example": true
+          },
+          "ledgerDebtId": {
+            "type": "string",
+            "nullable": true
+          },
+          "recordedAtClient": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["totalAmount", "items"]
+      },
+      "Ledger": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["owes_me", "i_owe"]
+          },
+          "counterpartyName": {
+            "type": "string",
+            "example": "Rahim Store"
+          },
+          "counterpartyContact": {
+            "type": "string",
+            "nullable": true
+          },
+          "initialAmount": {
+            "type": "number"
+          },
+          "outstandingBalance": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "default": "USD"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SyncOperation": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["payment", "product", "sale"]
+          },
+          "clientTempId": {
+            "type": "string",
+            "example": "local-uuid-123"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "Required for product and sale operations"
+          },
+          "operation": {
+            "type": "string",
+            "enum": ["create", "delete"],
+            "description": "Optional: defaults to create"
+          }
+        },
+        "required": ["type", "clientTempId"]
+      },
+      "SyncOperationProduct": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SyncOperation" },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["product"]
+              },
+              "name": {
+                "type": "string",
+                "example": "Lux Soap"
+              },
+              "price": {
+                "type": "number",
+                "example": 80
+              },
+              "imageUrl": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": ["name", "price"]
+          }
+        ]
+      },
+      "SyncOperationSale": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SyncOperation" },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["sale"]
+              },
+              "totalAmount": {
+                "type": "number",
+                "example": 280
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SaleItem"
+                }
+              },
+              "ledgerId": {
+                "type": "string",
+                "nullable": true,
+                "description": "Optional: creates debt if provided"
+              },
+              "recordedAtClient": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            },
+            "required": ["totalAmount", "items"]
+          }
+        ]
+      },
+      "SyncResult": {
+        "type": "object",
+        "properties": {
+          "clientTempId": {
+            "type": "string",
+            "description": "Echo of client-provided temp ID"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "Echo of client-provided idempotency key"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "serverAssignedId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Server-assigned MongoDB _id for the created/updated resource"
+          },
+          "idempotent": {
+            "type": "boolean",
+            "description": "True if operation was skipped (already exists with same idempotencyKey)"
+          },
+          "conflict": {
+            "type": "boolean"
+          },
+          "conflictReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "ledgerDebtCreated": {
+            "type": "boolean",
+            "description": "True if sale operation created a ledger debt entry"
+          },
+          "ledgerTxnId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Server-assigned payment/transaction ID for the ledger debt entry"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Error message when success=false"
+          }
+        }
+      },
+      "PaginatedResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "pagination": {
+                "type": "object",
+                "properties": {
+                  "page": { "type": "integer" },
+                  "limit": { "type": "integer" },
+                  "total": { "type": "integer" },
+                  "pages": { "type": "integer" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "Error description"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "nullable": true
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/products": {
+      "post": {
+        "tags": ["Products"],
+        "summary": "Create a new product",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Lux Soap",
+                    "maxLength": 200
+                  },
+                  "price": {
+                    "type": "number",
+                    "example": 80,
+                    "minimum": 0
+                  },
+                  "imageUrl": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "clientTempId": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Client's local ID for sync"
+                  }
+                },
+                "required": ["name", "price"]
+              },
+              "example": {
+                "name": "Lux Soap",
+                "price": 80,
+                "imageUrl": null,
+                "clientTempId": "local-uuid-123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Product created successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "product": {
+                      "_id": "507f1f77bcf86cd799439011",
+                      "ownerId": "507f1f77bcf86cd799439012",
+                      "name": "Lux Soap",
+                      "price": 80,
+                      "imageUrl": null,
+                      "syncStatus": "synced",
+                      "createdAt": "2026-03-16T10:00:00Z",
+                      "updatedAt": "2026-03-16T10:00:00Z"
+                    }
+                  },
+                  "message": "Product created successfully"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Products"],
+        "summary": "List products",
+        "description": "Supports pagination and incremental fetch via `since` parameter. Use `since` to get only products updated since a given timestamp.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50 }
+          },
+          {
+            "name": "syncStatus",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["synced", "pending", "failed"]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO8601 timestamp - returns only products updated since this time"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Products list",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "products": [
+                      {
+                        "_id": "507f1f77bcf86cd799439011",
+                        "name": "Lux Soap",
+                        "price": 80,
+                        "syncStatus": "synced",
+                        "clientTempId": "local-uuid-123"
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 50,
+                      "total": 1,
+                      "pages": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/products/{id}": {
+      "get": {
+        "tags": ["Products"],
+        "summary": "Get product by ID",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Product details",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "product": {
+                      "_id": "507f1f77bcf86cd799439011",
+                      "name": "Lux Soap",
+                      "price": 80
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Products"],
+        "summary": "Update product",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "price": { "type": "number", "minimum": 0 },
+                  "imageUrl": { "type": "string", "nullable": true }
+                }
+              },
+              "example": {
+                "name": "Lux Soap Premium",
+                "price": 90
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Product updated",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "product": {
+                      "_id": "507f1f77bcf86cd799439011",
+                      "name": "Lux Soap Premium",
+                      "price": 90,
+                      "syncStatus": "synced"
+                    }
+                  }
+                },
+                "message": "Product updated successfully"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Products"],
+        "summary": "Delete product (soft delete)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Product deleted",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Product deleted successfully"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sales": {
+      "post": {
+        "tags": ["Sales"],
+        "summary": "Create a new sale",
+        "description": "Creates a sale. If ledgerId is provided, automatically creates a debt entry on the ledger.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "totalAmount": {
+                    "type": "number",
+                    "example": 280
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/SaleItem"
+                    }
+                  },
+                  "ledgerId": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Optional: creates debt if provided"
+                  },
+                  "clientTempId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Unique key for idempotency"
+                  },
+                  "recordedAtClient": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  }
+                },
+                "required": ["totalAmount", "items"]
+              },
+              "example": {
+                "totalAmount": 280,
+                "items": [
+                  {
+                    "name": "Lux Soap",
+                    "price": 80,
+                    "quantity": 2,
+                    "subtotal": 160
+                  },
+                  {
+                    "name": "Shampoo",
+                    "price": 120,
+                    "quantity": 1,
+                    "subtotal": 120
+                  }
+                ],
+                "ledgerId": "507f1f77bcf86cd799439099",
+                "clientTempId": "local-sale-456",
+                "idempotencyKey": "idem-sale-456",
+                "recordedAtClient": "2026-03-16T09:30:00Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Sale created successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "sale": {
+                      "_id": "507f1f77bcf86cd799439100",
+                      "totalAmount": 280,
+                      "ledgerId": "507f1f77bcf86cd799439099",
+                      "ledgerDebtCreated": true,
+                      "items": [
+                        {
+                          "name": "Lux Soap",
+                          "price": 80,
+                          "quantity": 2,
+                          "subtotal": 160
+                        },
+                        {
+                          "name": "Shampoo",
+                          "price": 120,
+                          "quantity": 1,
+                          "subtotal": 120
+                        }
+                      ],
+                      "syncStatus": "synced"
+                    },
+                    "ledgerDebtCreated": true
+                  },
+                  "message": "Sale created with ledger debt"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Idempotent response - sale already exists",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "sale": {},
+                    "idempotent": true
+                  },
+                  "message": "Sale already exists"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["Sales"],
+        "summary": "List sales",
+        "description": "Supports pagination and incremental fetch via `since` parameter. Use `since` to get only sales updated since a given timestamp.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50 }
+          },
+          {
+            "name": "ledgerId",
+            "in": "query",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "syncStatus",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["synced", "pending", "failed"]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO8601 timestamp - returns only sales updated since this time"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sales list",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "sales": [
+                      {
+                        "_id": "507f1f77bcf86cd799439100",
+                        "totalAmount": 280,
+                        "items": []
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 50,
+                      "total": 1,
+                      "pages": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sales/{id}": {
+      "get": {
+        "tags": ["Sales"],
+        "summary": "Get sale by ID",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sale details",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "sale": {
+                      "_id": "507f1f77bcf86cd799439100",
+                      "totalAmount": 280,
+                      "ledgerId": {
+                        "_id": "507f1f77bcf86cd799439099",
+                        "counterpartyName": "Rahim Store",
+                        "outstandingBalance": 1280
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Sales"],
+        "summary": "Delete sale",
+        "description": "Cannot delete a sale that has an associated ledger debt",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sale deleted"
+          },
+          "400": {
+            "description": "Cannot delete sale with ledger debt",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Cannot delete a sale that has an associated ledger debt. Reverse the ledger entry first."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ledgers": {
+      "get": {
+        "tags": ["Ledgers"],
+        "summary": "List ledgers",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ledgers list",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "ledgers": [
+                      {
+                        "_id": "507f1f77bcf86cd799439099",
+                        "type": "owes_me",
+                        "counterpartyName": "Rahim Store",
+                        "outstandingBalance": 1000,
+                        "currency": "USD"
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 20,
+                      "total": 1,
+                      "pages": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/uploads/receipt": {
+      "post": {
+        "tags": ["Uploads"],
+        "summary": "Upload image",
+        "description": "Upload an image file. Max size: 5MB. Allowed: image/* only.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image uploaded",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "url": "https://res.cloudinary.com/xxx/image/upload/v123/abc123.jpg",
+                    "publicId": "abc123"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid file type or size",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Only image files are allowed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sync/batch": {
+      "post": {
+        "tags": ["Sync"],
+        "summary": "Batch sync operations",
+        "description": "Process multiple offline operations in a batch. Max 100 operations per request.\n\nSupported operation types:\n- payment: Sync payment (existing)\n- product: Create/delete products\n- sale: Create/delete sales with optional ledger debt",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "operations": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        { "$ref": "#/components/schemas/SyncOperationProduct" },
+                        { "$ref": "#/components/schemas/SyncOperationSale" }
+                      ]
+                    },
+                    "maxItems": 100
+                  }
+                },
+                "required": ["operations"]
+              },
+              "example": {
+                "operations": [
+                  {
+                    "type": "product",
+                    "clientTempId": "local-prod-1",
+                    "idempotencyKey": "idem-prod-1",
+                    "name": "Toothpaste",
+                    "price": 50
+                  },
+                  {
+                    "type": "sale",
+                    "clientTempId": "local-sale-1",
+                    "idempotencyKey": "idem-sale-1",
+                    "totalAmount": 150,
+                    "items": [
+                      {
+                        "name": "Soap",
+                        "price": 50,
+                        "quantity": 2,
+                        "subtotal": 100
+                      },
+                      {
+                        "name": "Toothpaste",
+                        "price": 50,
+                        "quantity": 1,
+                        "subtotal": 50
+                      }
+                    ],
+                    "ledgerId": "507f1f77bcf86cd799439099",
+                    "recordedAtClient": "2026-03-16T09:30:00Z"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "All operations processed successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "results": [
+                      {
+                        "clientTempId": "local-prod-1",
+                        "success": true,
+                        "serverAssignedId": "507f1f77bcf86cd799439101"
+                      },
+                      {
+                        "clientTempId": "local-sale-1",
+                        "success": true,
+                        "serverAssignedId": "507f1f77bcf86cd799439102",
+                        "ledgerDebtCreated": true
+                      }
+                    ],
+                    "processed": 2,
+                    "failed": 0
+                  }
+                }
+              }
+            }
+          },
+          "207": {
+            "description": "Partial batch failure (some operations failed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Partial batch failure",
+                  "data": {
+                    "results": [
+                      {
+                        "clientTempId": "local-prod-1",
+                        "success": true,
+                        "serverAssignedId": "507f1f77bcf86cd799439101"
+                      },
+                      {
+                        "clientTempId": "local-sale-1",
+                        "success": false,
+                        "error": "Ledger not found"
+                      }
+                    ],
+                    "processed": 1,
+                    "failed": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sync/status": {
+      "get": {
+        "tags": ["Sync"],
+        "summary": "Get sync status",
+        "description": "Get changes since a specific timestamp for reconciliation",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "ISO8601 timestamp to get changes since"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sync status with changes",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "syncTimestamp": "2026-03-16T12:00:00Z",
+                    "changes": [
+                      {
+                        "collection": "payments",
+                        "docId": "507f1f77bcf86cd799439022",
+                        "operation": "create",
+                        "timestamp": "2026-03-16T10:30:05Z",
+                        "data": {
+                          "ledgerId": "507f1f77bcf86cd799439011",
+                          "amount": 500,
+                          "previousOutstanding": 1000,
+                          "newOutstanding": 500,
+                          "offline": true,
+                          "clientTempId": "temp-uuid-123"
+                        }
+                      }
+                    ],
+                    "ledgersUpdated": [
+                      {
+                        "docId": "507f1f77bcf86cd799439011",
+                        "outstandingBalance": 500,
+                        "updatedAt": "2026-03-16T10:30:05Z"
+                      }
+                    ],
+                    "pagination": {
+                      "changesCount": 1,
+                      "ledgersCount": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Products",
+      "description": "Product catalog operations"
+    },
+    {
+      "name": "Sales",
+      "description": "Sales recording operations"
+    },
+    {
+      "name": "Ledgers",
+      "description": "Ledger (customer credit) operations"
+    },
+    {
+      "name": "Uploads",
+      "description": "File upload operations"
+    },
+    {
+      "name": "Sync",
+      "description": "Offline sync operations"
+    }
+  ]
+}

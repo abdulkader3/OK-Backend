@@ -1,0 +1,181 @@
+{
+  "description": "Frontend sync mapping examples - shows how to map clientTempId to server IDs",
+
+  "batchRequest": {
+    "operations": [
+      {
+        "type": "product",
+        "clientTempId": "local-prod-lux-soap",
+        "idempotencyKey": "idem-prod-lux-soap-v1",
+        "name": "Lux Soap",
+        "price": 80
+      },
+      {
+        "type": "product",
+        "clientTempId": "local-prod-shampoo",
+        "idempotencyKey": "idem-prod-shampoo-v1",
+        "name": "Shampoo",
+        "price": 120
+      },
+      {
+        "type": "sale",
+        "clientTempId": "local-sale-001",
+        "idempotencyKey": "idem-sale-001-v1",
+        "totalAmount": 280,
+        "items": [
+          { "name": "Lux Soap", "price": 80, "quantity": 2, "subtotal": 160 },
+          { "name": "Shampoo", "price": 120, "quantity": 1, "subtotal": 120 }
+        ],
+        "ledgerId": "507f1f77bcf86cd799439099",
+        "recordedAtClient": "2026-03-16T09:30:00Z"
+      }
+    ]
+  },
+
+  "batchResponse": {
+    "success": true,
+    "data": {
+      "results": [
+        {
+          "clientTempId": "local-prod-lux-soap",
+          "idempotencyKey": "idem-prod-lux-soap-v1",
+          "success": true,
+          "serverAssignedId": "507f1f77bcf86cd799439011"
+        },
+        {
+          "clientTempId": "local-prod-shampoo",
+          "idempotencyKey": "idem-prod-shampoo-v1",
+          "success": true,
+          "serverAssignedId": "507f1f77bcf86cd799439012"
+        },
+        {
+          "clientTempId": "local-sale-001",
+          "idempotencyKey": "idem-sale-001-v1",
+          "success": true,
+          "serverAssignedId": "507f1f77bcf86cd799439100",
+          "ledgerDebtCreated": true,
+          "ledgerTxnId": "507f1f77bcf86cd799439200"
+        }
+      ],
+      "processed": 3,
+      "failed": 0
+    }
+  },
+
+  "frontendMapping": {
+    "note": "Use this mapping to update local records after sync",
+    "productMapping": [
+      {
+        "localId": "local-prod-lux-soap",
+        "serverId": "507f1f77bcf86cd799439011",
+        "idempotencyKey": "idem-prod-lux-soap-v1",
+        "syncStatus": "synced"
+      },
+      {
+        "localId": "local-prod-shampoo",
+        "serverId": "507f1f77bcf86cd799439012",
+        "idempotencyKey": "idem-prod-shampoo-v1",
+        "syncStatus": "synced"
+      }
+    ],
+    "saleMapping": [
+      {
+        "localId": "local-sale-001",
+        "serverId": "507f1f77bcf86cd799439100",
+        "idempotencyKey": "idem-sale-001-v1",
+        "syncStatus": "synced",
+        "ledgerDebtCreated": true,
+        "ledgerTxnId": "507f1f77bcf86cd799439200",
+        "originalLedgerId": "507f1f77bcf86cd799439099"
+      }
+    ]
+  },
+
+  "idempotentExample": {
+    "description": "Resending same idempotencyKey returns existing record",
+    "request": {
+      "operations": [
+        {
+          "type": "product",
+          "clientTempId": "local-prod-lux-soap",
+          "idempotencyKey": "idem-prod-lux-soap-v1",
+          "name": "Lux Soap (updated price)",
+          "price": 85
+        }
+      ]
+    },
+    "response": {
+      "success": true,
+      "data": {
+        "results": [
+          {
+            "clientTempId": "local-prod-lux-soap",
+            "idempotencyKey": "idem-prod-lux-soap-v1",
+            "success": true,
+            "serverAssignedId": "507f1f77bcf86cd799439011",
+            "idempotent": true
+          }
+        ],
+        "processed": 1,
+        "failed": 0
+      }
+    },
+    "frontendNote": "When idempotent=true, do NOT update the local record - it was already synced. Only update if idempotent is false."
+  },
+
+  "partialFailureExample": {
+    "description": "Some operations may fail while others succeed",
+    "request": {
+      "operations": [
+        {
+          "type": "product",
+          "clientTempId": "local-prod-1",
+          "idempotencyKey": "idem-prod-1",
+          "name": "Valid Product",
+          "price": 50
+        },
+        {
+          "type": "sale",
+          "clientTempId": "local-sale-1",
+          "idempotencyKey": "idem-sale-1",
+          "totalAmount": 100,
+          "items": [
+            { "name": "Test", "price": 100, "quantity": 1, "subtotal": 100 }
+          ],
+          "ledgerId": "invalid-ledger-id"
+        }
+      ]
+    },
+    "response": {
+      "success": false,
+      "message": "Partial batch failure",
+      "data": {
+        "results": [
+          {
+            "clientTempId": "local-prod-1",
+            "idempotencyKey": "idem-prod-1",
+            "success": true,
+            "serverAssignedId": "507f1f77bcf86cd799439011"
+          },
+          {
+            "clientTempId": "local-sale-1",
+            "idempotencyKey": "idem-sale-1",
+            "success": false,
+            "error": "Ledger not found"
+          }
+        ],
+        "processed": 1,
+        "failed": 1
+      }
+    },
+    "httpStatus": 207,
+    "frontendNote": "For failed operations, keep syncStatus='failed' and show error to user. Successful ones should be marked synced."
+  },
+
+  "incrementalFetchExample": {
+    "description": "Use ?since= to fetch only changed items",
+    "productsRequest": "GET /api/products?since=2026-03-15T00:00:00Z",
+    "salesRequest": "GET /api/sales?since=2026-03-15T00:00:00Z",
+    "note": "Returns only items where updatedAt >= since timestamp"
+  }
+}

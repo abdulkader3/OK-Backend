@@ -1,0 +1,216 @@
+{
+  "description": "Sample dataset for development seeding - 3 products, 2 ledgers, 3 sales",
+  "note": "Import order: Products -> Ledgers -> Sales",
+  "products": [
+    {
+      "clientTempId": "prod-lux-soap",
+      "name": "Lux Soap",
+      "price": 80,
+      "idempotencyKey": "idem-prod-lux-soap",
+      "imageUrl": null
+    },
+    {
+      "clientTempId": "prod-shampoo",
+      "name": "Shampoo",
+      "price": 120,
+      "idempotencyKey": "idem-prod-shampoo",
+      "imageUrl": null
+    },
+    {
+      "clientTempId": "prod-toothpaste",
+      "name": "Toothpaste",
+      "price": 50,
+      "idempotencyKey": "idem-prod-toothpaste",
+      "imageUrl": null
+    }
+  ],
+  "ledgers": [
+    {
+      "counterpartyName": "Rahim Store",
+      "type": "owes_me",
+      "initialAmount": 1000,
+      "counterpartyContact": "01712345678",
+      "priority": "high",
+      "notes": "Regular customer"
+    },
+    {
+      "counterpartyName": "Karim Shop",
+      "type": "owes_me",
+      "initialAmount": 500,
+      "counterpartyContact": "01712345679",
+      "priority": "medium",
+      "notes": "Occasional buyer"
+    }
+  ],
+  "sales": [
+    {
+      "clientTempId": "sale-001",
+      "idempotencyKey": "idem-sale-001",
+      "totalAmount": 160,
+      "recordedAtClient": "2026-03-10T09:30:00Z",
+      "items": [
+        {
+          "name": "Lux Soap",
+          "price": 80,
+          "quantity": 2,
+          "subtotal": 160
+        }
+      ],
+      "ledgerId": null,
+      "note": "Cash sale - no ledger"
+    },
+    {
+      "clientTempId": "sale-002",
+      "idempotencyKey": "idem-sale-002",
+      "totalAmount": 170,
+      "recordedAtClient": "2026-03-12T14:20:00Z",
+      "items": [
+        {
+          "name": "Lux Soap",
+          "price": 80,
+          "quantity": 1,
+          "subtotal": 80
+        },
+        {
+          "name": "Shampoo",
+          "price": 120,
+          "quantity": 1,
+          "subtotal": 120
+        }
+      ],
+      "ledgerId": "USE_LEDGER_ID_FROM_ABOVE",
+      "ledgerCounterpartyName": "Rahim Store",
+      "note": "Credit sale to Rahim - creates debt"
+    },
+    {
+      "clientTempId": "sale-003",
+      "idempotencyKey": "idem-sale-003",
+      "totalAmount": 150,
+      "recordedAtClient": "2026-03-15T16:45:00Z",
+      "items": [
+        {
+          "name": "Toothpaste",
+          "price": 50,
+          "quantity": 2,
+          "subtotal": 100
+        },
+        {
+          "name": "Shampoo",
+          "price": 120,
+          "quantity": 1,
+          "subtotal": 120
+        },
+        {
+          "name": "Lux Soap",
+          "price": 80,
+          "quantity": 1,
+          "subtotal": 80
+        }
+      ],
+      "ledgerId": "USE_LEDGER_ID_FROM_ABOVE",
+      "ledgerCounterpartyName": "Karim Shop",
+      "note": "Credit sale to Karim - creates debt"
+    }
+  ],
+  "expectedLedgerBalances": {
+    "Rahim Store": {
+      "initialAmount": 1000,
+      "afterSale002": 1170,
+      "outstandingBalance": 1170
+    },
+    "Karim Shop": {
+      "initialAmount": 500,
+      "afterSale003": 650,
+      "outstandingBalance": 650
+    }
+  },
+  "apiContractExamples": {
+    "createProduct": {
+      "request": {
+        "name": "Lux Soap",
+        "price": 80,
+        "clientTempId": "prod-lux-soap"
+      },
+      "response": {
+        "success": true,
+        "data": {
+          "product": {
+            "_id": "507f1f77bcf86cd799439011",
+            "name": "Lux Soap",
+            "price": 80,
+            "syncStatus": "synced"
+          }
+        }
+      }
+    },
+    "createSaleWithLedger": {
+      "request": {
+        "totalAmount": 170,
+        "items": [
+          { "name": "Lux Soap", "price": 80, "quantity": 1, "subtotal": 80 },
+          { "name": "Shampoo", "price": 120, "quantity": 1, "subtotal": 120 }
+        ],
+        "ledgerId": "LEDGER_ID_HERE",
+        "idempotencyKey": "idem-sale-002"
+      },
+      "response": {
+        "success": true,
+        "data": {
+          "sale": {
+            "_id": "507f1f77bcf86cd799439100",
+            "totalAmount": 170,
+            "ledgerDebtCreated": true,
+            "ledgerDebtId": "507f1f77bcf86cd799439200"
+          },
+          "ledgerDebtCreated": true
+        }
+      }
+    },
+    "syncBatch": {
+      "request": {
+        "operations": [
+          {
+            "type": "product",
+            "clientTempId": "prod-lux-soap",
+            "idempotencyKey": "idem-prod-lux-soap",
+            "name": "Lux Soap",
+            "price": 80
+          },
+          {
+            "type": "sale",
+            "clientTempId": "sale-001",
+            "idempotencyKey": "idem-sale-001",
+            "totalAmount": 160,
+            "items": [
+              {
+                "name": "Lux Soap",
+                "price": 80,
+                "quantity": 2,
+                "subtotal": 160
+              }
+            ]
+          }
+        ]
+      },
+      "response": {
+        "success": true,
+        "data": {
+          "results": [
+            {
+              "clientTempId": "prod-lux-soap",
+              "success": true,
+              "serverAssignedId": "507f1f77bcf86cd799439011"
+            },
+            {
+              "clientTempId": "sale-001",
+              "success": true,
+              "serverAssignedId": "507f1f77bcf86cd799439100"
+            }
+          ],
+          "processed": 2,
+          "failed": 0
+        }
+      }
+    }
+  }
+}

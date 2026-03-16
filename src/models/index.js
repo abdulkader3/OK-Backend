@@ -6,3 +6,5 @@ export { default as AuditLog } from "./auditlog.model.js";
 export { default as BigBoss } from "./bigboss.model.js";
 export { default as BigBossBill } from "./bigbossbill.model.js";
 export { default as SalaryPayment } from "./salarypayment.model.js";
+export { default as Product } from "./product.model.js";
+export { default as Sale } from "./sale.model.js";

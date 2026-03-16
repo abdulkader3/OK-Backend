@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { Ledger, Payment, AuditLog } from "../models/index.js";
+import { Ledger, Payment, AuditLog, Product, Sale } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
@@ -21,6 +21,7 @@ const processBatchSync = asyncHandler(async (req, res, _next) => {
   for (const op of operations) {
     const result = {
       clientTempId: op.clientTempId,
+      idempotencyKey: op.idempotencyKey,
       success: false,
     };
 
@@ -32,8 +33,26 @@ const processBatchSync = asyncHandler(async (req, res, _next) => {
         result.conflict = paymentResult.conflict || false;
         result.conflictReason = paymentResult.conflictReason;
         result.serverState = paymentResult.serverState;
-        
+
         if (paymentResult.idempotent) {
+          result.idempotent = true;
+        }
+      } else if (op.type === "product") {
+        const productResult = await processProductSync(req.user, op);
+        result.success = productResult.success;
+        result.serverAssignedId = productResult.serverAssignedId;
+
+        if (productResult.idempotent) {
+          result.idempotent = true;
+        }
+      } else if (op.type === "sale") {
+        const saleResult = await processSaleSync(req.user, op);
+        result.success = saleResult.success;
+        result.serverAssignedId = saleResult.serverAssignedId;
+        result.ledgerDebtCreated = saleResult.ledgerDebtCreated;
+        result.ledgerTxnId = saleResult.ledgerTxnId || null;
+
+        if (saleResult.idempotent) {
           result.idempotent = true;
         }
       } else {
@@ -70,7 +89,18 @@ const processBatchSync = asyncHandler(async (req, res, _next) => {
 });
 
 async function processPaymentSync(user, op) {
-  const { clientTempId, idempotencyKey, ledgerId, amount, type, method, note, receiptUrl, recordedAtClient, offline } = op;
+  const {
+    clientTempId,
+    idempotencyKey,
+    ledgerId,
+    amount,
+    type,
+    method,
+    note,
+    receiptUrl,
+    recordedAtClient,
+    offline,
+  } = op;
 
   if (!idempotencyKey) {
     throw new ApiErrors(400, "idempotencyKey is required");
@@ -105,10 +135,15 @@ async function processPaymentSync(user, op) {
   }
 
   const previousOutstanding = ledger.outstandingBalance;
-  let newOutstanding = type === "refund" ? previousOutstanding + amount : previousOutstanding - amount;
+  let newOutstanding =
+    type === "refund"
+      ? previousOutstanding + amount
+      : previousOutstanding - amount;
 
   const clientExpectedOutstanding = op.expectedOutstanding;
-  const conflict = clientExpectedOutstanding !== undefined && clientExpectedOutstanding !== newOutstanding;
+  const conflict =
+    clientExpectedOutstanding !== undefined &&
+    clientExpectedOutstanding !== newOutstanding;
 
   const paymentData = {
     ledgerId,
@@ -134,26 +169,46 @@ async function processPaymentSync(user, op) {
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
-        const [createdPayment] = await Payment.create([paymentData], { session });
-        await Ledger.findByIdAndUpdate(ledgerId, { outstandingBalance: newOutstanding }, { session });
+        const [createdPayment] = await Payment.create([paymentData], {
+          session,
+        });
+        await Ledger.findByIdAndUpdate(
+          ledgerId,
+          { outstandingBalance: newOutstanding },
+          { session }
+        );
         payment = createdPayment;
-        await AuditLog.create([{
-          operation: "create",
-          collection: "payments",
-          docId: payment._id,
-          userId: user._id,
-          userEmail: user.email,
-          before: null,
-          after: payment.toObject(),
-          metadata: { ledgerId, amount, previousOutstanding, newOutstanding, offlineSync: true, clientTempId },
-        }], { session });
+        await AuditLog.create(
+          [
+            {
+              operation: "create",
+              collection: "payments",
+              docId: payment._id,
+              userId: user._id,
+              userEmail: user.email,
+              before: null,
+              after: payment.toObject(),
+              metadata: {
+                ledgerId,
+                amount,
+                previousOutstanding,
+                newOutstanding,
+                offlineSync: true,
+                clientTempId,
+              },
+            },
+          ],
+          { session }
+        );
       });
     } finally {
       session.endSession();
     }
   } else {
     payment = await Payment.create(paymentData);
-    await Ledger.findByIdAndUpdate(ledgerId, { outstandingBalance: newOutstanding });
+    await Ledger.findByIdAndUpdate(ledgerId, {
+      outstandingBalance: newOutstanding,
+    });
     await AuditLog.create({
       operation: "create",
       collection: "payments",
@@ -162,7 +217,14 @@ async function processPaymentSync(user, op) {
       userEmail: user.email,
       before: null,
       after: payment.toObject(),
-      metadata: { ledgerId, amount, previousOutstanding, newOutstanding, offlineSync: true, clientTempId },
+      metadata: {
+        ledgerId,
+        amount,
+        previousOutstanding,
+        newOutstanding,
+        offlineSync: true,
+        clientTempId,
+      },
     });
   }
 
@@ -175,8 +237,233 @@ async function processPaymentSync(user, op) {
       ledgerId,
       previousOutstanding,
       newOutstanding,
-      clientExpectedOutstanding: conflict ? clientExpectedOutstanding : undefined,
+      clientExpectedOutstanding: conflict
+        ? clientExpectedOutstanding
+        : undefined,
     },
+  };
+}
+
+async function processProductSync(user, op) {
+  const { clientTempId, idempotencyKey, name, price, imageUrl, operation } = op;
+
+  if (!name || price === undefined) {
+    throw new ApiErrors(400, "name and price are required");
+  }
+
+  const ownerId = user.ownerId || user._id;
+
+  if (idempotencyKey) {
+    const existingProduct = await Product.findOne({ idempotencyKey });
+    if (existingProduct) {
+      return {
+        success: true,
+        serverAssignedId: existingProduct._id.toString(),
+        idempotent: true,
+      };
+    }
+  }
+
+  if (operation === "delete") {
+    const product = await Product.findOne({ clientTempId, ownerId });
+    if (product) {
+      product.deleted = true;
+      product.syncStatus = "synced";
+      await product.save();
+      return {
+        success: true,
+        serverAssignedId: product._id.toString(),
+      };
+    }
+    return {
+      success: true,
+      serverAssignedId: null,
+    };
+  }
+
+  const product = await Product.create({
+    ownerId,
+    name,
+    price,
+    imageUrl: imageUrl || null,
+    clientTempId: clientTempId || null,
+    idempotencyKey: idempotencyKey || null,
+    syncStatus: "synced",
+  });
+
+  await AuditLog.create({
+    operation: "create",
+    collection: "products",
+    docId: product._id,
+    userId: user._id,
+    userEmail: user.email,
+    after: product.toObject(),
+    metadata: { offlineSync: true, clientTempId },
+  });
+
+  return {
+    success: true,
+    serverAssignedId: product._id.toString(),
+  };
+}
+
+async function processSaleSync(user, op) {
+  const {
+    clientTempId,
+    idempotencyKey,
+    totalAmount,
+    items,
+    ledgerId,
+    recordedAtClient,
+    operation,
+  } = op;
+
+  if (!totalAmount || !items || !Array.isArray(items) || items.length === 0) {
+    throw new ApiErrors(400, "totalAmount and items are required");
+  }
+
+  const ownerId = user.ownerId || user._id;
+
+  if (idempotencyKey) {
+    const existingSale = await Sale.findOne({ idempotencyKey });
+    if (existingSale) {
+      return {
+        success: true,
+        serverAssignedId: existingSale._id.toString(),
+        idempotent: true,
+        ledgerDebtCreated: existingSale.ledgerDebtCreated,
+        ledgerTxnId: existingSale.ledgerDebtId
+          ? existingSale.ledgerDebtId.toString()
+          : null,
+      };
+    }
+  }
+
+  if (operation === "delete") {
+    const sale = await Sale.findOne({ clientTempId, ownerId });
+    if (sale) {
+      if (sale.ledgerDebtCreated) {
+        throw new ApiErrors(
+          400,
+          "Cannot delete a sale with ledger debt. Reverse the ledger entry first."
+        );
+      }
+      sale.deleted = true;
+      sale.syncStatus = "synced";
+      await sale.save();
+      return {
+        success: true,
+        serverAssignedId: sale._id.toString(),
+      };
+    }
+    return {
+      success: true,
+      serverAssignedId: null,
+    };
+  }
+
+  let ledgerDebtCreated = false;
+  let ledgerDebtId = null;
+
+  const session = await mongoose.startSession();
+  let sale;
+
+  try {
+    await session.withTransaction(async () => {
+      const saleData = {
+        ownerId,
+        totalAmount,
+        items: items.map((item) => ({
+          clientProductId: item.productId || null,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          subtotal: item.subtotal,
+        })),
+        clientTempId: clientTempId || null,
+        idempotencyKey: idempotencyKey || null,
+        syncStatus: "synced",
+        recordedAtClient: recordedAtClient ? new Date(recordedAtClient) : null,
+      };
+
+      if (ledgerId) {
+        const ledger = await Ledger.findById(ledgerId).session(session);
+        if (!ledger) {
+          throw new ApiErrors(404, "Ledger not found");
+        }
+
+        saleData.ledgerId = ledgerId;
+
+        const previousOutstanding = ledger.outstandingBalance;
+        const newOutstanding = previousOutstanding + totalAmount;
+
+        ledger.initialAmount = previousOutstanding + totalAmount;
+        ledger.outstandingBalance = newOutstanding;
+        await ledger.save({ session });
+
+        const payment = await Payment.create(
+          [
+            {
+              ledgerId,
+              amount: totalAmount,
+              type: "adjustment",
+              method: "other",
+              note: "Sale on credit (offline sync)",
+              recordedBy: user._id,
+              recordedAt: new Date(),
+              previousOutstanding,
+              newOutstanding,
+              idempotencyKey: idempotencyKey
+                ? `sale-debt-${idempotencyKey}`
+                : `sale-debt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              offline: true,
+              syncStatus: "synced",
+              clientTempId: clientTempId ? `debt-${clientTempId}` : null,
+            },
+          ],
+          { session }
+        );
+
+        saleData.ledgerDebtCreated = true;
+        saleData.ledgerDebtId = payment[0]._id;
+        ledgerDebtCreated = true;
+        ledgerDebtId = payment[0]._id;
+      }
+
+      const [createdSale] = await Sale.create([saleData], { session });
+      sale = createdSale;
+
+      await AuditLog.create(
+        [
+          {
+            operation: "create",
+            collection: "sales",
+            docId: sale._id,
+            userId: user._id,
+            userEmail: user.email,
+            after: sale.toObject(),
+            metadata: {
+              ledgerDebtCreated,
+              ledgerDebtId,
+              totalAmount,
+              itemsCount: items.length,
+              offlineSync: true,
+              clientTempId,
+            },
+          },
+        ],
+        { session }
+      );
+    });
+  } finally {
+    session.endSession();
+  }
+
+  return {
+    success: true,
+    serverAssignedId: sale._id.toString(),
+    ledgerDebtCreated,
+    ledgerTxnId: ledgerDebtId ? ledgerDebtId.toString() : null,
   };
 }
 
@@ -184,7 +471,10 @@ const getSyncStatus = asyncHandler(async (req, res, _next) => {
   const since = req.query.since;
 
   if (!since) {
-    throw new ApiErrors(400, "since query parameter is required (ISO8601 timestamp)");
+    throw new ApiErrors(
+      400,
+      "since query parameter is required (ISO8601 timestamp)"
+    );
   }
 
   const sinceDate = new Date(since);
