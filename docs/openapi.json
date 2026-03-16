@@ -943,6 +943,64 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": ["Ledgers"],
+        "summary": "Delete a ledger",
+        "description": "Delete a ledger. Use ?force=true to delete even if payments exist (will cascade delete payments).",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "schema": { "type": "boolean", "default": false },
+            "description": "Set to true to delete ledger and all associated payments"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ledger deleted successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Ledger deleted successfully along with 3 payment(s)"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cannot delete ledger with payments",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Cannot delete ledger with 5 existing payment(s). Use ?force=true to delete anyway."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "You don't have permission to delete this ledger"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/uploads/receipt": {

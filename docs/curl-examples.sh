@@ -199,6 +199,31 @@ curl -X GET "http://localhost:4000/api/sales?since=2026-03-15T00:00:00Z" \
 
 
 # ============================================
+# 7. LEDGER DELETE
+# ============================================
+
+# Delete ledger (will fail if payments exist)
+curl -X DELETE "http://localhost:4000/api/ledgers/507f1f77bcf86cd799439099" \
+  -H "Authorization: Bearer <token>"
+
+# Response if payments exist (400):
+# {
+#   "success": false,
+#   "message": "Cannot delete ledger with 3 existing payment(s). Use ?force=true to delete anyway."
+# }
+
+# Delete ledger with force (cascade deletes payments)
+curl -X DELETE "http://localhost:4000/api/ledgers/507f1f77bcf86cd799439099?force=true" \
+  -H "Authorization: Bearer <token>"
+
+# Response (200):
+# {
+#   "success": true,
+#   "message": "Ledger deleted successfully along with 3 payment(s)"
+# }
+
+
+# ============================================
 # ADDITIONAL USEFUL COMMANDS
 # ============================================
 
@@ -217,33 +242,6 @@ curl -X GET "http://localhost:4000/api/ledgers?page=1&limit=20" \
 # Get sync status
 curl -X GET "http://localhost:4000/api/sync/status?since=2026-03-01T00:00:00Z" \
   -H "Authorization: Bearer <token>"
-
-
-# ============================================
-# ERROR EXAMPLES
-# ============================================
-
-# Validation Error (422)
-# {
-#   "success": false,
-#   "message": "Validation failed",
-#   "errors": [
-#     {"field": "name", "message": "Product name is required"}
-#   ]
-# }
-
-# Conflict Error (409)
-# {
-#   "success": false,
-#   "message": "Ledger balance diverged",
-#   "conflictType": "balance_divergence",
-#   "serverState": {
-#     "ledgerId": "...",
-#     "previousOutstanding": 800,
-#     "newOutstanding": 300,
-#     "clientExpectedOutstanding": 500
-#   }
-# }
 
 
 # ============================================

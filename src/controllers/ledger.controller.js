@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { Ledger, Payment, AuditLog } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
@@ -199,7 +200,10 @@ const updateLedger = asyncHandler(async (req, res, _next) => {
 });
 
 const deleteLedger = asyncHandler(async (req, res, _next) => {
-  const ledger = await Ledger.findById(req.params.id);
+  const { id } = req.params;
+  const force = req.query.force === "true";
+
+  const ledger = await Ledger.findById(id);
 
   if (!ledger) {
     throw new ApiErrors(404, "Ledger not found");
@@ -215,29 +219,76 @@ const deleteLedger = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(403, "You don't have permission to delete this ledger");
   }
 
-  const payments = await Payment.countDocuments({ ledgerId: ledger._id });
+  const paymentsCount = await Payment.countDocuments({ ledgerId: ledger._id });
 
-  if (payments > 0) {
+  if (paymentsCount > 0 && !force) {
     throw new ApiErrors(
       400,
-      "Cannot delete ledger with existing payments. Archive it instead."
+      `Cannot delete ledger with ${paymentsCount} existing payment(s). Use ?force=true to delete anyway.`
     );
   }
 
-  await Ledger.findByIdAndDelete(req.params.id);
+  const session = await mongoose.startSession();
 
-  await AuditLog.create({
-    operation: "delete",
-    collection: "ledgers",
-    docId: ledger._id,
-    userId: req.user._id,
-    userEmail: req.user.email,
-    before: ledger.toObject(),
-  });
+  try {
+    await session.withTransaction(async () => {
+      if (paymentsCount > 0) {
+        const paymentsToDelete = await Payment.find({
+          ledgerId: ledger._id,
+        }).session(session);
+
+        await Payment.deleteMany({ ledgerId: ledger._id }, { session });
+
+        const paymentAuditLogs = paymentsToDelete.map((payment) => ({
+          operation: "delete",
+          collection: "payments",
+          docId: payment._id,
+          userId: req.user._id,
+          userEmail: req.user.email,
+          before: payment.toObject(),
+          metadata: {
+            cascadeDelete: true,
+            ledgerId: ledger._id.toString(),
+          },
+        }));
+
+        if (paymentAuditLogs.length > 0) {
+          await AuditLog.create(paymentAuditLogs, { session, ordered: true });
+        }
+      }
+
+      await Ledger.findByIdAndDelete(id, { session });
+
+      await AuditLog.create(
+        [
+          {
+            operation: "delete",
+            collection: "ledgers",
+            docId: ledger._id,
+            userId: req.user._id,
+            userEmail: req.user.email,
+            before: ledger.toObject(),
+            metadata: {
+              cascadeDelete: paymentsCount > 0,
+              paymentsDeleted: paymentsCount,
+            },
+          },
+        ],
+        { session }
+      );
+    });
+  } finally {
+    session.endSession();
+  }
+
+  const message =
+    paymentsCount > 0
+      ? `Ledger deleted successfully along with ${paymentsCount} payment(s)`
+      : "Ledger deleted successfully";
 
   res.status(200).json({
     success: true,
-    message: "Ledger deleted successfully",
+    message,
   });
 });
 
