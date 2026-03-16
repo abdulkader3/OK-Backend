@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { Sale, Product, Ledger, Payment, AuditLog } from "../models/index.js";
+import { Sale, Ledger, Payment, AuditLog } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
