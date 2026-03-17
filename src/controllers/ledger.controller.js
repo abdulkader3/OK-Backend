@@ -31,6 +31,22 @@ const createLedger = asyncHandler(async (req, res, _next) => {
     outstandingBalance: initialAmount,
   });
 
+  await Payment.create({
+    ownerId: ledger.ownerId,
+    ledgerId: ledger._id,
+    amount: initialAmount,
+    type: "adjustment",
+    method: "other",
+    note: "Initial amount",
+    recordedBy: req.user._id,
+    recordedAt: ledger.createdAt,
+    previousOutstanding: 0,
+    newOutstanding: initialAmount,
+    idempotencyKey: `initial-${ledger._id}`,
+    offline: false,
+    syncStatus: "synced",
+  });
+
   await AuditLog.create({
     operation: "create",
     collection: "ledgers",
@@ -40,9 +56,13 @@ const createLedger = asyncHandler(async (req, res, _next) => {
     after: ledger.toObject(),
   });
 
+  const payments = await Payment.find({ ledgerId: ledger._id })
+    .sort({ recordedAt: 1 })
+    .populate("recordedBy", "name email");
+
   res.status(201).json({
     success: true,
-    data: { ledger },
+    data: { ledger, payments },
     message: "Ledger created successfully",
   });
 });
@@ -357,13 +377,10 @@ const addDebt = asyncHandler(async (req, res, _next) => {
     );
   }
 
-  const previousInitialAmount = ledger.initialAmount;
   const previousOutstanding = ledger.outstandingBalance;
 
-  const newInitialAmount = previousInitialAmount + amount;
   const newOutstanding = previousOutstanding + amount;
 
-  ledger.initialAmount = newInitialAmount;
   ledger.outstandingBalance = newOutstanding;
 
   await ledger.save();
@@ -395,7 +412,7 @@ const addDebt = asyncHandler(async (req, res, _next) => {
       outstandingBalance: previousOutstanding,
     },
     after: {
-      initialAmount: newInitialAmount,
+      initialAmount: previousInitialAmount,
       outstandingBalance: newOutstanding,
     },
     metadata: { action: "add_debt", amount, note },
