@@ -119,6 +119,44 @@ const getLedgerById = asyncHandler(async (req, res, _next) => {
   });
 });
 
+const getLedgerPayments = asyncHandler(async (req, res, _next) => {
+  const ledger = await Ledger.findById(req.params.id);
+
+  if (!ledger) {
+    throw new ApiErrors(404, "Ledger not found");
+  }
+
+  const canView =
+    ledger.ownerId.toString() === req.user._id.toString() ||
+    ledger.createdBy.toString() === req.user._id.toString() ||
+    req.user.role === "owner" ||
+    req.user.role === "admin" ||
+    req.user.permissions?.canViewAllLedgers;
+
+  if (!canView) {
+    throw new ApiErrors(403, "Access denied");
+  }
+
+  const payments = await Payment.find({ ledgerId: ledger._id })
+    .sort({ recordedAt: -1 })
+    .populate("recordedBy", "name email");
+
+  const totalPaid = payments
+    .filter((p) => p.type === "payment")
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      payments,
+      summary: {
+        totalPayments: payments.length,
+        totalPaid,
+      },
+    },
+  });
+});
+
 const updateLedger = asyncHandler(async (req, res, _next) => {
   const {
     counterpartyName,
@@ -376,6 +414,7 @@ export {
   createLedger,
   getLedgers,
   getLedgerById,
+  getLedgerPayments,
   updateLedger,
   deleteLedger,
   addDebt,

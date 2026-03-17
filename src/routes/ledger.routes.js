@@ -3,6 +3,7 @@ import {
   createLedger,
   getLedgers,
   getLedgerById,
+  getLedgerPayments,
   updateLedger,
   deleteLedger,
   addDebt,
@@ -18,6 +19,7 @@ router.use(authenticate);
 router.get("/", getLedgers);
 router.post("/", authorize("canCreateLedger"), createLedger);
 router.get("/:id", getLedgerById);
+router.get("/:id/payments", getLedgerPayments);
 router.patch("/:id", authorize("canEditLedger"), updateLedger);
 router.delete("/:id", authorize("canDeleteLedger"), deleteLedger);
 router.post("/:id/payments", authorize("canRecordPayment"), createPayment);
