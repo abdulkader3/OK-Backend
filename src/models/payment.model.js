@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const paymentSchema = new mongoose.Schema(
   {
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: [true, "Owner is required"],
+      index: true,
+    },
     ledgerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Ledger",
@@ -70,6 +76,7 @@ const paymentSchema = new mongoose.Schema(
 
 paymentSchema.index({ ledgerId: 1, recordedAt: -1 });
 paymentSchema.index({ recordedBy: 1, recordedAt: -1 });
+paymentSchema.index({ ownerId: 1, updatedAt: -1 });
 
 const Payment = mongoose.model("Payment", paymentSchema);
 

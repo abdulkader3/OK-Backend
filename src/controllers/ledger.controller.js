@@ -331,6 +331,7 @@ const addDebt = asyncHandler(async (req, res, _next) => {
   await ledger.save();
 
   const payment = await Payment.create({
+    ownerId: ledger.ownerId,
     ledgerId: ledger._id,
     amount,
     type: "adjustment",

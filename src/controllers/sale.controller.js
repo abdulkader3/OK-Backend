@@ -84,6 +84,7 @@ const createSale = asyncHandler(async (req, res, _next) => {
         const payment = await Payment.create(
           [
             {
+              ownerId,
               ledgerId,
               amount: totalAmount,
               type: "adjustment",

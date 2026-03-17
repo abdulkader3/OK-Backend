@@ -65,7 +65,10 @@ const createPayment = asyncHandler(async (req, res, _next) => {
 
   let payment;
 
+  const ownerId = req.user.ownerId || req.user._id;
+
   const paymentData = {
+    ownerId,
     ledgerId,
     amount,
     type: type || "payment",

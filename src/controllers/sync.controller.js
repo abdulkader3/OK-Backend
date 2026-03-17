@@ -110,6 +110,8 @@ async function processPaymentSync(user, op) {
     throw new ApiErrors(400, "ledgerId and amount are required");
   }
 
+  const ownerId = user.ownerId || user._id;
+
   const existingPayment = await Payment.findOne({ idempotencyKey });
   if (existingPayment) {
     return {
@@ -146,6 +148,7 @@ async function processPaymentSync(user, op) {
     clientExpectedOutstanding !== newOutstanding;
 
   const paymentData = {
+    ownerId,
     ledgerId,
     amount,
     type: type || "payment",
@@ -404,6 +407,7 @@ async function processSaleSync(user, op) {
         const payment = await Payment.create(
           [
             {
+              ownerId,
               ledgerId,
               amount: totalAmount,
               type: "adjustment",
@@ -482,8 +486,11 @@ const getSyncStatus = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(400, "Invalid since timestamp");
   }
 
-  const [payments, ledgers] = await Promise.all([
+  const ownerId = req.user.ownerId || req.user._id;
+
+  const [payments, ledgers, sales] = await Promise.all([
     Payment.find({
+      ownerId,
       updatedAt: { $gte: sinceDate },
     })
       .sort({ updatedAt: -1 })
@@ -491,6 +498,14 @@ const getSyncStatus = asyncHandler(async (req, res, _next) => {
       .populate("recordedBy", "name email")
       .lean(),
     Ledger.find({
+      ownerId,
+      updatedAt: { $gte: sinceDate },
+    })
+      .sort({ updatedAt: -1 })
+      .limit(500)
+      .lean(),
+    Sale.find({
+      ownerId,
       updatedAt: { $gte: sinceDate },
     })
       .sort({ updatedAt: -1 })
@@ -519,15 +534,31 @@ const getSyncStatus = asyncHandler(async (req, res, _next) => {
     updatedAt: ledger.updatedAt,
   }));
 
+  const salesChanges = sales.map((sale) => ({
+    collection: "sales",
+    docId: sale._id.toString(),
+    operation: sale.deleted ? "delete" : "create",
+    timestamp: sale.updatedAt,
+    data: {
+      totalAmount: sale.totalAmount,
+      items: sale.items,
+      ledgerId: sale.ledgerId,
+      clientTempId: sale.clientTempId,
+      recordedAtClient: sale.recordedAtClient,
+    },
+  }));
+
   res.status(200).json({
     success: true,
     data: {
       syncTimestamp: new Date().toISOString(),
       changes,
       ledgersUpdated,
+      sales: salesChanges,
       pagination: {
         changesCount: changes.length,
         ledgersCount: ledgersUpdated.length,
+        salesCount: salesChanges.length,
       },
     },
   });
