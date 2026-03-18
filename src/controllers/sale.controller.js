@@ -156,7 +156,6 @@ const getSales = asyncHandler(async (req, res, _next) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const skip = (page - 1) * limit;
-  const since = req.query.since;
 
   const filter = {
     ownerId: req.user.ownerId || req.user._id,
@@ -171,10 +170,22 @@ const getSales = asyncHandler(async (req, res, _next) => {
     filter.syncStatus = req.query.syncStatus;
   }
 
-  if (since) {
-    const sinceDate = new Date(since);
+  if (req.query.since) {
+    const sinceDate = new Date(req.query.since);
     if (!isNaN(sinceDate.getTime())) {
       filter.updatedAt = { $gte: sinceDate };
+    }
+  }
+
+  if (req.query.dateFrom || req.query.dateTo) {
+    filter.createdAt = {};
+    if (req.query.dateFrom) {
+      filter.createdAt.$gte = new Date(req.query.dateFrom);
+    }
+    if (req.query.dateTo) {
+      const toDate = new Date(req.query.dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filter.createdAt.$lte = toDate;
     }
   }
 
@@ -186,10 +197,21 @@ const getSales = asyncHandler(async (req, res, _next) => {
 
   const total = await Sale.countDocuments(filter);
 
+  const formattedSales = sales.map((sale) => ({
+    _id: sale._id,
+    totalAmount: sale.totalAmount,
+    items: sale.items,
+    paymentStatus: sale.ledgerId ? "not_paid" : "paid",
+    ledgerId: sale.ledgerId?._id || null,
+    ledgerName: sale.ledgerId?.counterpartyName || null,
+    createdAt: sale.createdAt,
+    updatedAt: sale.updatedAt,
+  }));
+
   res.status(200).json({
     success: true,
     data: {
-      sales,
+      sales: formattedSales,
       pagination: {
         page,
         limit,
@@ -219,6 +241,141 @@ const getSaleById = asyncHandler(async (req, res, _next) => {
   res.status(200).json({
     success: true,
     data: { sale },
+  });
+});
+
+const getSalesByDate = asyncHandler(async (req, res, _next) => {
+  const { dateFrom, dateTo } = req.query;
+
+  const filter = {
+    ownerId: req.user.ownerId || req.user._id,
+    deleted: false,
+  };
+
+  if (dateFrom || dateTo) {
+    filter.createdAt = {};
+    if (dateFrom) {
+      filter.createdAt.$gte = new Date(dateFrom);
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filter.createdAt.$lte = toDate;
+    }
+  }
+
+  const sales = await Sale.find(filter)
+    .sort({ createdAt: -1 })
+    .populate("ledgerId", "counterpartyName outstandingBalance");
+
+  const groupedByDate = {};
+
+  sales.forEach((sale) => {
+    const dateKey = sale.createdAt.toISOString().split("T")[0];
+
+    if (!groupedByDate[dateKey]) {
+      groupedByDate[dateKey] = {
+        date: dateKey,
+        sales: [],
+        totalAmount: 0,
+        transactionCount: 0,
+        paidCount: 0,
+        unpaidCount: 0,
+      };
+    }
+
+    const isCreditSale = !!sale.ledgerId;
+
+    groupedByDate[dateKey].sales.push({
+      _id: sale._id,
+      totalAmount: sale.totalAmount,
+      items: sale.items,
+      paymentStatus: isCreditSale ? "not_paid" : "paid",
+      ledgerId: sale.ledgerId?._id || null,
+      ledgerName: sale.ledgerId?.counterpartyName || null,
+      createdAt: sale.createdAt,
+    });
+
+    groupedByDate[dateKey].totalAmount += sale.totalAmount;
+    groupedByDate[dateKey].transactionCount += 1;
+
+    if (isCreditSale) {
+      groupedByDate[dateKey].unpaidCount += 1;
+    } else {
+      groupedByDate[dateKey].paidCount += 1;
+    }
+  });
+
+  const result = Object.values(groupedByDate).sort(
+    (a, b) => new Date(b.date) - new Date(a.date)
+  );
+
+  res.status(200).json({
+    success: true,
+    data: {
+      groupedSales: result,
+      totalTransactions: sales.length,
+      totalAmount: sales.reduce((sum, s) => sum + s.totalAmount, 0),
+    },
+  });
+});
+
+const getSalesSummary = asyncHandler(async (req, res, _next) => {
+  const { dateFrom, dateTo } = req.query;
+
+  const filter = {
+    ownerId: req.user.ownerId || req.user._id,
+    deleted: false,
+  };
+
+  if (dateFrom || dateTo) {
+    filter.createdAt = {};
+    if (dateFrom) {
+      filter.createdAt.$gte = new Date(dateFrom);
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filter.createdAt.$lte = toDate;
+    }
+  }
+
+  const sales = await Sale.find(filter)
+    .sort({ createdAt: -1 })
+    .populate("ledgerId", "counterpartyName outstandingBalance");
+
+  const totalAmount = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+  const totalTransactions = sales.length;
+  const creditSales = sales.filter((s) => s.ledgerId);
+  const cashSales = sales.filter((s) => !s.ledgerId);
+
+  const formattedSales = sales.map((sale) => ({
+    _id: sale._id,
+    totalAmount: sale.totalAmount,
+    items: sale.items,
+    paymentStatus: sale.ledgerId ? "not_paid" : "paid",
+    ledgerId: sale.ledgerId?._id || null,
+    ledgerName: sale.ledgerId?.counterpartyName || null,
+    createdAt: sale.createdAt,
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      summary: {
+        dateRange: {
+          from: dateFrom || null,
+          to: dateTo || null,
+        },
+        totalAmount,
+        totalTransactions,
+        paidTransactions: cashSales.length,
+        unpaidTransactions: creditSales.length,
+        paidAmount: cashSales.reduce((sum, s) => sum + s.totalAmount, 0),
+        unpaidAmount: creditSales.reduce((sum, s) => sum + s.totalAmount, 0),
+      },
+      sales: formattedSales,
+    },
   });
 });
 
@@ -263,4 +420,11 @@ const deleteSale = asyncHandler(async (req, res, _next) => {
   });
 });
 
-export { createSale, getSales, getSaleById, deleteSale };
+export {
+  createSale,
+  getSales,
+  getSaleById,
+  deleteSale,
+  getSalesByDate,
+  getSalesSummary,
+};
