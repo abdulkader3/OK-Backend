@@ -50,6 +50,16 @@ const bigBossBillSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    isPaid: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    paidAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -57,6 +67,7 @@ const bigBossBillSchema = new mongoose.Schema(
 );
 
 bigBossBillSchema.index({ ownerId: 1, deletedAt: 1 });
+bigBossBillSchema.index({ ownerId: 1, paidAt: 1 });
 bigBossBillSchema.index({ bigBossId: 1, month: 1, year: 1, deletedAt: 1 });
 bigBossBillSchema.index({ ownerId: 1, year: 1, deletedAt: 1 });
 

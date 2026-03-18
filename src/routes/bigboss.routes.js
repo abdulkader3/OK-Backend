@@ -12,6 +12,8 @@ import {
   updateBill,
   deleteBill,
   getBigBossSummary,
+  payBill,
+  unpayBill,
 } from "../controllers/bigboss.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 
@@ -45,5 +47,7 @@ router.get("/bills/all", getBills);
 router.get("/bills/:billId", getBillById);
 router.patch("/bills/:billId", updateBill);
 router.delete("/bills/:billId", deleteBill);
+router.post("/bills/:billId/pay", payBill);
+router.post("/bills/:billId/unpay", unpayBill);
 
 export default router;

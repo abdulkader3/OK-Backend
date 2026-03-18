@@ -1,5 +1,13 @@
 import { v2 as cloudinary } from "cloudinary";
-import { BigBoss, BigBossBill, AuditLog } from "../models/index.js";
+import mongoose from "mongoose";
+import {
+  BigBoss,
+  BigBossBill,
+  AuditLog,
+  Ledger,
+  LedgerTransaction,
+  Sale,
+} from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
@@ -436,8 +444,9 @@ const deleteBill = asyncHandler(async (req, res, _next) => {
     throw new ApiErrors(403, "Access denied");
   }
 
-  bill.deletedAt = new Date();
-  await bill.save();
+  const billData = bill.toObject();
+
+  await BigBossBill.findByIdAndDelete(req.params.billId);
 
   await AuditLog.create({
     operation: "delete",
@@ -445,12 +454,12 @@ const deleteBill = asyncHandler(async (req, res, _next) => {
     docId: bill._id,
     userId: req.user._id,
     userEmail: req.user.email,
-    before: bill.toObject(),
+    before: billData,
   });
 
   res.status(200).json({
     success: true,
-    message: "Bill moved to bin successfully",
+    message: "Bill deleted successfully",
   });
 });
 
@@ -501,6 +510,243 @@ const getBigBossSummary = asyncHandler(async (req, res, _next) => {
   });
 });
 
+const getMonthlySummaryForBill = async (userId, year, month) => {
+  const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+  const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
+  const ownerFilter = {
+    $or: [{ ownerId: userId }, { createdBy: userId }],
+  };
+
+  const [ledgerTotalResult] = await Ledger.aggregate([
+    { $match: { ...ownerFilter, type: "owes_me" } },
+    { $group: { _id: null, total: { $sum: "$outstandingBalance" } } },
+  ]);
+
+  const [ledgerMonthlyResult] = await LedgerTransaction.aggregate([
+    {
+      $match: {
+        ownerId: userId,
+        type: "owes_me",
+        transactionDate: { $gte: startDate, $lte: endDate },
+      },
+    },
+    { $group: { _id: null, total: { $sum: "$amount" } } },
+  ]);
+
+  const [bigBossResult] = await BigBossBill.aggregate([
+    {
+      $match: {
+        ownerId: userId,
+        isPaid: true,
+        paidAt: { $gte: startDate, $lte: endDate },
+      },
+    },
+    { $group: { _id: null, total: { $sum: "$amount" } } },
+  ]);
+
+  const [salesResultFromSale] = await Sale.aggregate([
+    { $match: { ownerId: userId, deleted: false } },
+    { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+  ]);
+
+  const ledgerOwedTotal = ledgerTotalResult?.total || 0;
+  const ledgerOwedMonthly = ledgerMonthlyResult?.total
+    ? Number(ledgerMonthlyResult.total.toString())
+    : 0;
+  const bigBossPaid = bigBossResult?.total || 0;
+  const salesTotal = salesResultFromSale?.total || 0;
+
+  return {
+    year,
+    month,
+    ledgerOwedTotal: Number(ledgerOwedTotal).toFixed(2),
+    ledgerOwedMonthly: Number(ledgerOwedMonthly).toFixed(2),
+    salesTotal: Number(salesTotal).toFixed(2),
+    bigBossPaid: Number(bigBossPaid).toFixed(2),
+    balanceMonthly: Number(ledgerOwedMonthly - bigBossPaid).toFixed(2),
+    balanceTotal: Number(ledgerOwedTotal + salesTotal - bigBossPaid).toFixed(2),
+  };
+};
+
+const payBill = asyncHandler(async (req, res, _next) => {
+  const { billId } = req.params;
+  const userId = req.user._id;
+
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+
+    const bill = await BigBossBill.findById(billId).session(session);
+
+    if (!bill) {
+      throw new ApiErrors(404, "Bill not found");
+    }
+
+    if (bill.ownerId.toString() !== userId.toString()) {
+      throw new ApiErrors(403, "Access denied");
+    }
+
+    if (bill.isPaid) {
+      await session.abortTransaction();
+      const monthlySummary = await getMonthlySummaryForBill(
+        userId,
+        bill.year,
+        bill.month
+      );
+      return res.status(200).json({
+        success: true,
+        data: {
+          bill: {
+            _id: bill._id,
+            isPaid: bill.isPaid,
+            paidAt: bill.paidAt,
+            amount: bill.amount,
+          },
+          monthlySummary,
+        },
+        message: "Bill already paid",
+      });
+    }
+
+    bill.isPaid = true;
+    bill.paidAt = new Date();
+    await bill.save({ session });
+
+    await AuditLog.create(
+      [
+        {
+          operation: "pay",
+          collection: "bigbossbills",
+          docId: bill._id,
+          userId: userId,
+          userEmail: req.user.email,
+          after: bill.toObject(),
+        },
+      ],
+      { session }
+    );
+
+    await session.commitTransaction();
+
+    const monthlySummary = await getMonthlySummaryForBill(
+      userId,
+      bill.year,
+      bill.month
+    );
+
+    res.status(200).json({
+      success: true,
+      data: {
+        bill: {
+          _id: bill._id,
+          isPaid: bill.isPaid,
+          paidAt: bill.paidAt,
+          amount: bill.amount,
+        },
+        monthlySummary,
+      },
+      message: "Bill marked as paid",
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+});
+
+const unpayBill = asyncHandler(async (req, res, _next) => {
+  const { billId } = req.params;
+  const userId = req.user._id;
+
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+
+    const bill = await BigBossBill.findById(billId).session(session);
+
+    if (!bill) {
+      throw new ApiErrors(404, "Bill not found");
+    }
+
+    if (bill.ownerId.toString() !== userId.toString()) {
+      throw new ApiErrors(403, "Access denied");
+    }
+
+    if (!bill.isPaid) {
+      await session.abortTransaction();
+      const monthlySummary = await getMonthlySummaryForBill(
+        userId,
+        bill.year,
+        bill.month
+      );
+      return res.status(200).json({
+        success: true,
+        data: {
+          bill: {
+            _id: bill._id,
+            isPaid: bill.isPaid,
+            paidAt: bill.paidAt,
+            amount: bill.amount,
+          },
+          monthlySummary,
+        },
+        message: "Bill is not paid",
+      });
+    }
+
+    const wasPaid = bill.isPaid;
+    const wasPaidAt = bill.paidAt;
+
+    bill.isPaid = false;
+    bill.paidAt = null;
+    await bill.save({ session });
+
+    await AuditLog.create(
+      [
+        {
+          operation: "unpay",
+          collection: "bigbossbills",
+          docId: bill._id,
+          userId: userId,
+          userEmail: req.user.email,
+          before: { isPaid: wasPaid, paidAt: wasPaidAt },
+          after: bill.toObject(),
+        },
+      ],
+      { session }
+    );
+
+    await session.commitTransaction();
+
+    const monthlySummary = await getMonthlySummaryForBill(
+      userId,
+      bill.year,
+      bill.month
+    );
+
+    res.status(200).json({
+      success: true,
+      data: {
+        bill: {
+          _id: bill._id,
+          isPaid: bill.isPaid,
+          paidAt: bill.paidAt,
+          amount: bill.amount,
+        },
+        monthlySummary,
+      },
+      message: "Bill payment reversed",
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+});
+
 export {
   createBigBoss,
   getBigBosses,
@@ -513,4 +759,6 @@ export {
   updateBill,
   deleteBill,
   getBigBossSummary,
+  payBill,
+  unpayBill,
 };

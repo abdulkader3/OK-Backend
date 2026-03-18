@@ -1,20 +1,273 @@
-import { Ledger } from "../models/index.js";
+import {
+  Ledger,
+  BigBossBill,
+  LedgerTransaction,
+  Sale,
+} from "../models/index.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
+
+const getOwnerFilter = (userId, user) => {
+  const filter = {
+    $or: [{ ownerId: userId }, { createdBy: userId }],
+  };
+  if (user.ownerId) {
+    filter.$or.push({ ownerId: user.ownerId }, { createdBy: user.ownerId });
+  }
+  return filter;
+};
+
+const parseMonthYear = (year, month) => {
+  const now = new Date();
+  const parsedYear = year ? parseInt(year) : now.getFullYear();
+  const parsedMonth = month ? parseInt(month) : now.getMonth() + 1;
+
+  if (parsedYear < 2000 || parsedYear > 2100) {
+    throw new Error("Invalid year parameter");
+  }
+  if (parsedMonth < 1 || parsedMonth > 12) {
+    throw new Error("Invalid month parameter");
+  }
+
+  return { year: parsedYear, month: parsedMonth };
+};
+
+const getMonthDateRange = (year, month) => {
+  const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+  const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+  return { startDate, endDate };
+};
+
+const formatDecimal = (value) => {
+  if (value === null || value === undefined) return "0.00";
+  return Number(value).toFixed(2);
+};
+
+const getMonthlySummary = asyncHandler(async (req, res, _next) => {
+  const { year, month } = req.query;
+  const userId = req.user._id;
+
+  const { year: parsedYear, month: parsedMonth } = parseMonthYear(year, month);
+  const ownerFilter = getOwnerFilter(userId, req.user);
+
+  const { startDate, endDate } = getMonthDateRange(parsedYear, parsedMonth);
+
+  const ledgerOwedTotalPipeline = [
+    { $match: { ...ownerFilter, type: "owes_me" } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$outstandingBalance" },
+      },
+    },
+  ];
+
+  const [ledgerTotalResult] = await Ledger.aggregate(ledgerOwedTotalPipeline);
+
+  const ledgerOwedMonthlyPipeline = [
+    {
+      $match: {
+        ownerId: userId,
+        type: "owes_me",
+        transactionDate: { $gte: startDate, $lte: endDate },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$amount" },
+      },
+    },
+  ];
+
+  const [ledgerMonthlyResult] = await LedgerTransaction.aggregate(
+    ledgerOwedMonthlyPipeline
+  );
+
+  const bigBossPaidPipeline = [
+    {
+      $match: {
+        ownerId: userId,
+        isPaid: true,
+        year: parsedYear,
+        month: parsedMonth,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$amount" },
+      },
+    },
+  ];
+
+  const [bigBossResult] = await BigBossBill.aggregate(bigBossPaidPipeline);
+
+  const salesMonthlyPipeline = [
+    {
+      $match: {
+        ownerId: userId,
+        deleted: false,
+        ledgerId: null,
+        createdAt: { $gte: startDate, $lte: endDate },
+      },
+    },
+    { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+  ];
+
+  const [salesMonthlyResult] = await Sale.aggregate(salesMonthlyPipeline);
+
+  const ledgerOwedTotal = ledgerTotalResult?.total || 0;
+  const ledgerOwedMonthly = ledgerMonthlyResult?.total
+    ? Number(ledgerMonthlyResult.total.toString())
+    : 0;
+  const bigBossPaid = bigBossResult?.total || 0;
+  const salesMonthly = salesMonthlyResult?.total || 0;
+  const balanceMonthly = ledgerOwedMonthly - bigBossPaid;
+  const balanceTotal = ledgerOwedTotal + salesMonthly - bigBossPaid;
+
+  res.status(200).json({
+    success: true,
+    data: {
+      year: parsedYear,
+      month: parsedMonth,
+      ledgerOwedTotal: formatDecimal(ledgerOwedTotal),
+      ledgerOwedMonthly: formatDecimal(ledgerOwedMonthly),
+      salesTotal: formatDecimal(salesMonthly),
+      bigBossPaid: formatDecimal(bigBossPaid),
+      balanceMonthly: formatDecimal(balanceMonthly),
+      balanceTotal: formatDecimal(balanceTotal),
+    },
+  });
+});
+
+const getMonthlyHistory = asyncHandler(async (req, res, _next) => {
+  const limit = parseInt(req.query.limit) || 12;
+  const userId = req.user._id;
+  const ownerFilter = getOwnerFilter(userId, req.user);
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  const months = [];
+  for (let i = 0; i < limit; i++) {
+    let m = currentMonth - i;
+    let y = currentYear;
+    while (m <= 0) {
+      m += 12;
+      y -= 1;
+    }
+    months.push({ year: y, month: m });
+  }
+
+  const results = await Promise.all(
+    months.map(async ({ year, month }) => {
+      const { startDate, endDate } = getMonthDateRange(year, month);
+
+      const ledgerOwedTotalPipeline = [
+        { $match: { ...ownerFilter, type: "owes_me" } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$outstandingBalance" },
+          },
+        },
+      ];
+
+      const [ledgerTotalResult] = await Ledger.aggregate(
+        ledgerOwedTotalPipeline
+      );
+
+      const ledgerOwedMonthlyPipeline = [
+        {
+          $match: {
+            ownerId: userId,
+            type: "owes_me",
+            transactionDate: { $gte: startDate, $lte: endDate },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ];
+
+      const [ledgerMonthlyResult] = await LedgerTransaction.aggregate(
+        ledgerOwedMonthlyPipeline
+      );
+
+      const bigBossPaidPipeline = [
+        {
+          $match: {
+            ownerId: userId,
+            isPaid: true,
+            year: year,
+            month: month,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ];
+
+      const [bigBossResult] = await BigBossBill.aggregate(bigBossPaidPipeline);
+
+      const salesMonthlyPipeline = [
+        {
+          $match: {
+            ownerId: userId,
+            deleted: false,
+            ledgerId: null,
+            createdAt: { $gte: startDate, $lte: endDate },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$totalAmount" },
+          },
+        },
+      ];
+
+      const [salesMonthlyResult] = await Sale.aggregate(salesMonthlyPipeline);
+
+      const ledgerOwedTotal = ledgerTotalResult?.total || 0;
+      const ledgerOwedMonthly = ledgerMonthlyResult?.total
+        ? Number(ledgerMonthlyResult.total.toString())
+        : 0;
+      const bigBossPaid = bigBossResult?.total || 0;
+      const salesMonthly = salesMonthlyResult?.total || 0;
+
+      return {
+        year,
+        month,
+        ledgerOwedTotal: formatDecimal(ledgerOwedTotal),
+        ledgerOwedMonthly: formatDecimal(ledgerOwedMonthly),
+        salesTotal: formatDecimal(salesMonthly),
+        bigBossPaid: formatDecimal(bigBossPaid),
+        balanceMonthly: formatDecimal(ledgerOwedMonthly - bigBossPaid),
+        balanceTotal: formatDecimal(
+          ledgerOwedTotal + salesMonthly - bigBossPaid
+        ),
+      };
+    })
+  );
+
+  res.status(200).json({
+    success: true,
+    data: results,
+  });
+});
 
 const getDashboardSummary = asyncHandler(async (req, res, _next) => {
   const userId = req.user._id;
   const now = new Date();
-
-  let ownerFilter = {
-    $or: [{ ownerId: userId }, { createdBy: userId }],
-  };
-
-  if (req.user.ownerId) {
-    ownerFilter.$or.push(
-      { ownerId: req.user.ownerId },
-      { createdBy: req.user.ownerId }
-    );
-  }
+  const ownerFilter = getOwnerFilter(userId, req.user);
 
   const [owesMeLedgers, iOweLedgers, overdueLedgers, highPriorityLedgers] =
     await Promise.all([
@@ -68,4 +321,4 @@ const getDashboardSummary = asyncHandler(async (req, res, _next) => {
   });
 });
 
-export { getDashboardSummary };
+export { getDashboardSummary, getMonthlySummary, getMonthlyHistory };

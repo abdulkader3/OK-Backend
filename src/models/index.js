@@ -8,3 +8,4 @@ export { default as BigBossBill } from "./bigbossbill.model.js";
 export { default as SalaryPayment } from "./salarypayment.model.js";
 export { default as Product } from "./product.model.js";
 export { default as Sale } from "./sale.model.js";
+export { default as LedgerTransaction } from "./ledgertransaction.model.js";
