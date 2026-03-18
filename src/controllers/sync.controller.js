@@ -284,6 +284,38 @@ async function processProductSync(user, op) {
     };
   }
 
+  if (operation === "update") {
+    const product = await Product.findOne({
+      clientTempId,
+      ownerId,
+      deleted: false,
+    });
+    if (product) {
+      const before = product.toObject();
+      product.name = name;
+      product.price = price;
+      if (imageUrl !== undefined) {
+        product.imageUrl = imageUrl;
+      }
+      product.syncStatus = "synced";
+      await product.save();
+      await AuditLog.create({
+        operation: "update",
+        collection: "products",
+        docId: product._id,
+        userId: user._id,
+        userEmail: user.email,
+        before,
+        after: product.toObject(),
+        metadata: { offlineSync: true, clientTempId },
+      });
+      return {
+        success: true,
+        serverAssignedId: product._id.toString(),
+      };
+    }
+  }
+
   const product = await Product.create({
     ownerId,
     name,
@@ -488,7 +520,7 @@ const getSyncStatus = asyncHandler(async (req, res, _next) => {
 
   const ownerId = req.user.ownerId || req.user._id;
 
-  const [payments, ledgers, sales] = await Promise.all([
+  const [payments, ledgers, sales, products] = await Promise.all([
     Payment.find({
       ownerId,
       updatedAt: { $gte: sinceDate },
@@ -505,6 +537,13 @@ const getSyncStatus = asyncHandler(async (req, res, _next) => {
       .limit(500)
       .lean(),
     Sale.find({
+      ownerId,
+      updatedAt: { $gte: sinceDate },
+    })
+      .sort({ updatedAt: -1 })
+      .limit(500)
+      .lean(),
+    Product.find({
       ownerId,
       updatedAt: { $gte: sinceDate },
     })
@@ -548,6 +587,19 @@ const getSyncStatus = asyncHandler(async (req, res, _next) => {
     },
   }));
 
+  const productsChanges = products.map((product) => ({
+    collection: "products",
+    docId: product._id.toString(),
+    operation: product.deleted ? "delete" : "update",
+    timestamp: product.updatedAt,
+    data: {
+      name: product.name,
+      price: product.price,
+      imageUrl: product.imageUrl,
+      clientTempId: product.clientTempId,
+    },
+  }));
+
   res.status(200).json({
     success: true,
     data: {
@@ -555,10 +607,12 @@ const getSyncStatus = asyncHandler(async (req, res, _next) => {
       changes,
       ledgersUpdated,
       sales: salesChanges,
+      products: productsChanges,
       pagination: {
         changesCount: changes.length,
         ledgersCount: ledgersUpdated.length,
         salesCount: salesChanges.length,
+        productsCount: productsChanges.length,
       },
     },
   });
