@@ -11,6 +11,7 @@ const createSale = asyncHandler(async (req, res, _next) => {
     clientTempId,
     idempotencyKey,
     recordedAtClient,
+    paymentMethod,
   } = req.body;
 
   if (!totalAmount || !items || !Array.isArray(items) || items.length === 0) {
@@ -51,6 +52,7 @@ const createSale = asyncHandler(async (req, res, _next) => {
         idempotencyKey: idempotencyKey || null,
         syncStatus: "synced",
         recordedAtClient: recordedAtClient ? new Date(recordedAtClient) : null,
+        paymentMethod: ledgerId ? null : paymentMethod || null,
       };
 
       if (ledgerId) {
@@ -202,6 +204,7 @@ const getSales = asyncHandler(async (req, res, _next) => {
     totalAmount: sale.totalAmount,
     items: sale.items,
     paymentStatus: sale.ledgerId ? "not_paid" : "paid",
+    paymentMethod: sale.paymentMethod,
     ledgerId: sale.ledgerId?._id || null,
     ledgerName: sale.ledgerId?.counterpartyName || null,
     createdAt: sale.createdAt,
@@ -291,6 +294,7 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
       totalAmount: sale.totalAmount,
       items: sale.items,
       paymentStatus: isCreditSale ? "not_paid" : "paid",
+      paymentMethod: sale.paymentMethod,
       ledgerId: sale.ledgerId?._id || null,
       ledgerName: sale.ledgerId?.counterpartyName || null,
       createdAt: sale.createdAt,
@@ -354,6 +358,7 @@ const getSalesSummary = asyncHandler(async (req, res, _next) => {
     totalAmount: sale.totalAmount,
     items: sale.items,
     paymentStatus: sale.ledgerId ? "not_paid" : "paid",
+    paymentMethod: sale.paymentMethod,
     ledgerId: sale.ledgerId?._id || null,
     ledgerName: sale.ledgerId?.counterpartyName || null,
     createdAt: sale.createdAt,

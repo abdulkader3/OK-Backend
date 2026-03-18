@@ -74,6 +74,11 @@ const saleSchema = new mongoose.Schema(
     recordedAtClient: {
       type: Date,
     },
+    paymentMethod: {
+      type: String,
+      enum: ["cash", "card"],
+      default: null,
+    },
     deleted: {
       type: Boolean,
       default: false,
