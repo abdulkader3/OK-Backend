@@ -3,6 +3,7 @@ import {
   BigBossBill,
   LedgerTransaction,
   Sale,
+  SalaryPayment,
 } from "../models/index.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
 
@@ -102,6 +103,24 @@ const getMonthlySummary = asyncHandler(async (req, res, _next) => {
 
   const [bigBossResult] = await BigBossBill.aggregate(bigBossPaidPipeline);
 
+  const salaryPaidPipeline = [
+    {
+      $match: {
+        ownerId: userId,
+        year: parsedYear,
+        month: parsedMonth,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$amount" },
+      },
+    },
+  ];
+
+  const [salaryResult] = await SalaryPayment.aggregate(salaryPaidPipeline);
+
   const salesMonthlyPipeline = [
     {
       $match: {
@@ -121,9 +140,11 @@ const getMonthlySummary = asyncHandler(async (req, res, _next) => {
     ? Number(ledgerMonthlyResult.total.toString())
     : 0;
   const bigBossPaid = bigBossResult?.total || 0;
+  const salaryPaid = salaryResult?.total || 0;
   const salesMonthly = salesMonthlyResult?.total || 0;
-  const balanceMonthly = ledgerOwedMonthly - bigBossPaid;
-  const balanceTotal = ledgerOwedTotal + salesMonthly - bigBossPaid;
+  const balanceMonthly = ledgerOwedMonthly - bigBossPaid - salaryPaid;
+  const balanceTotal =
+    ledgerOwedTotal + salesMonthly - bigBossPaid - salaryPaid;
 
   res.status(200).json({
     success: true,
@@ -134,6 +155,7 @@ const getMonthlySummary = asyncHandler(async (req, res, _next) => {
       ledgerOwedMonthly: formatDecimal(ledgerOwedMonthly),
       salesTotal: formatDecimal(salesMonthly),
       bigBossPaid: formatDecimal(bigBossPaid),
+      salaryPaid: formatDecimal(salaryPaid),
       balanceMonthly: formatDecimal(balanceMonthly),
       balanceTotal: formatDecimal(balanceTotal),
     },
@@ -217,6 +239,24 @@ const getMonthlyHistory = asyncHandler(async (req, res, _next) => {
 
       const [bigBossResult] = await BigBossBill.aggregate(bigBossPaidPipeline);
 
+      const salaryPaidPipeline = [
+        {
+          $match: {
+            ownerId: userId,
+            year: year,
+            month: month,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ];
+
+      const [salaryResult] = await SalaryPayment.aggregate(salaryPaidPipeline);
+
       const salesMonthlyPipeline = [
         {
           $match: {
@@ -241,6 +281,7 @@ const getMonthlyHistory = asyncHandler(async (req, res, _next) => {
         ? Number(ledgerMonthlyResult.total.toString())
         : 0;
       const bigBossPaid = bigBossResult?.total || 0;
+      const salaryPaid = salaryResult?.total || 0;
       const salesMonthly = salesMonthlyResult?.total || 0;
 
       return {
@@ -250,9 +291,12 @@ const getMonthlyHistory = asyncHandler(async (req, res, _next) => {
         ledgerOwedMonthly: formatDecimal(ledgerOwedMonthly),
         salesTotal: formatDecimal(salesMonthly),
         bigBossPaid: formatDecimal(bigBossPaid),
-        balanceMonthly: formatDecimal(ledgerOwedMonthly - bigBossPaid),
+        salaryPaid: formatDecimal(salaryPaid),
+        balanceMonthly: formatDecimal(
+          ledgerOwedMonthly - bigBossPaid - salaryPaid
+        ),
         balanceTotal: formatDecimal(
-          ledgerOwedTotal + salesMonthly - bigBossPaid
+          ledgerOwedTotal + salesMonthly - bigBossPaid - salaryPaid
         ),
       };
     })
