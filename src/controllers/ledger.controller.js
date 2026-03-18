@@ -378,6 +378,7 @@ const addDebt = asyncHandler(async (req, res, _next) => {
   }
 
   const previousOutstanding = ledger.outstandingBalance;
+  const previousInitialAmount = ledger.initialAmount;
 
   const newOutstanding = previousOutstanding + amount;
 
