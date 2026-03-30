@@ -76,7 +76,7 @@ const createPayment = asyncHandler(async (req, res, _next) => {
     note,
     receiptUrl,
     recordedBy: req.user._id,
-    recordedAt: new Date(),
+    recordedAt: recordedAtClient ? new Date(recordedAtClient) : new Date(),
     previousOutstanding,
     newOutstanding,
     idempotencyKey,

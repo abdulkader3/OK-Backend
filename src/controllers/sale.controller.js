@@ -51,6 +51,7 @@ const createSale = asyncHandler(async (req, res, _next) => {
         clientTempId: clientTempId || null,
         idempotencyKey: idempotencyKey || null,
         syncStatus: "synced",
+        createdAt: recordedAtClient ? new Date(recordedAtClient) : new Date(),
         recordedAtClient: recordedAtClient ? new Date(recordedAtClient) : null,
         paymentMethod: ledgerId ? null : paymentMethod || null,
       };
@@ -93,7 +94,9 @@ const createSale = asyncHandler(async (req, res, _next) => {
               method: "other",
               note: "Sale on credit",
               recordedBy: req.user._id,
-              recordedAt: new Date(),
+              recordedAt: recordedAtClient
+                ? new Date(recordedAtClient)
+                : new Date(),
               previousOutstanding,
               newOutstanding,
               idempotencyKey: idempotencyKey
@@ -102,6 +105,9 @@ const createSale = asyncHandler(async (req, res, _next) => {
               offline: false,
               syncStatus: "synced",
               clientTempId: clientTempId ? `debt-${clientTempId}` : null,
+              recordedAtClient: recordedAtClient
+                ? new Date(recordedAtClient)
+                : null,
             },
           ],
           { session }
@@ -249,7 +255,18 @@ const getSaleById = asyncHandler(async (req, res, _next) => {
 
 const getSalesByDate = asyncHandler(async (req, res, _next) => {
   const { dateFrom, dateTo } = req.query;
+  const userId = req.user._id;
   const ownerId = req.user.ownerId || req.user._id;
+
+  const ownerFilter = {
+    $or: [{ ownerId: userId }, { createdBy: userId }],
+  };
+  if (req.user.ownerId) {
+    ownerFilter.$or.push(
+      { ownerId: req.user.ownerId },
+      { createdBy: req.user.ownerId }
+    );
+  }
 
   const salesFilter = {
     ownerId,
@@ -273,7 +290,7 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
     .populate("ledgerId", "counterpartyName outstandingBalance");
 
   const paymentFilter = {
-    ownerId,
+    ...ownerFilter,
     type: "payment",
   };
 
@@ -307,17 +324,17 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
     if (!groupedByDate[dateKey]) {
       groupedByDate[dateKey] = {
         date: dateKey,
-        entries: [],
+        sales: [],
         totalAmount: 0,
         transactionCount: 0,
-        salesCount: 0,
-        paymentsCount: 0,
+        paidCount: 0,
+        unpaidCount: 0,
       };
     }
 
     const isCreditSale = !!sale.ledgerId;
 
-    groupedByDate[dateKey].entries.push({
+    groupedByDate[dateKey].sales.push({
       type: "sale",
       _id: sale._id,
       totalAmount: sale.totalAmount,
@@ -331,7 +348,12 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
 
     groupedByDate[dateKey].totalAmount += sale.totalAmount;
     groupedByDate[dateKey].transactionCount += 1;
-    groupedByDate[dateKey].salesCount += 1;
+
+    if (isCreditSale) {
+      groupedByDate[dateKey].unpaidCount += 1;
+    } else {
+      groupedByDate[dateKey].paidCount += 1;
+    }
   });
 
   filteredPayments.forEach((payment) => {
@@ -340,15 +362,15 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
     if (!groupedByDate[dateKey]) {
       groupedByDate[dateKey] = {
         date: dateKey,
-        entries: [],
+        sales: [],
         totalAmount: 0,
         transactionCount: 0,
-        salesCount: 0,
-        paymentsCount: 0,
+        paidCount: 0,
+        unpaidCount: 0,
       };
     }
 
-    groupedByDate[dateKey].entries.push({
+    groupedByDate[dateKey].sales.push({
       type: "payment",
       _id: payment._id,
       totalAmount: payment.amount,
@@ -361,7 +383,7 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
 
     groupedByDate[dateKey].totalAmount += payment.amount;
     groupedByDate[dateKey].transactionCount += 1;
-    groupedByDate[dateKey].paymentsCount += 1;
+    groupedByDate[dateKey].paidCount += 1;
   });
 
   const result = Object.values(groupedByDate).sort(
@@ -369,7 +391,7 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
   );
 
   result.forEach((day) => {
-    day.entries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    day.sales.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   });
 
   res.status(200).json({
