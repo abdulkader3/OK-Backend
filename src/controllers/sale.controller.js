@@ -276,12 +276,20 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
   if (dateFrom || dateTo) {
     salesFilter.createdAt = {};
     if (dateFrom) {
-      salesFilter.createdAt.$gte = new Date(dateFrom);
+      const [year, month, day] = dateFrom.split("-").map(Number);
+      salesFilter.createdAt.$gte = new Date(year, month - 1, day, 0, 0, 0, 0);
     }
     if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      salesFilter.createdAt.$lte = toDate;
+      const [year, month, day] = dateTo.split("-").map(Number);
+      salesFilter.createdAt.$lte = new Date(
+        year,
+        month - 1,
+        day,
+        23,
+        59,
+        59,
+        999
+      );
     }
   }
 
@@ -297,12 +305,28 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
   if (dateFrom || dateTo) {
     paymentFilter.recordedAt = {};
     if (dateFrom) {
-      paymentFilter.recordedAt.$gte = new Date(dateFrom);
+      const [year, month, day] = dateFrom.split("-").map(Number);
+      paymentFilter.recordedAt.$gte = new Date(
+        year,
+        month - 1,
+        day,
+        0,
+        0,
+        0,
+        0
+      );
     }
     if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      paymentFilter.recordedAt.$lte = toDate;
+      const [year, month, day] = dateTo.split("-").map(Number);
+      paymentFilter.recordedAt.$lte = new Date(
+        year,
+        month - 1,
+        day,
+        23,
+        59,
+        59,
+        999
+      );
     }
   }
 
@@ -337,6 +361,7 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
     groupedByDate[dateKey].sales.push({
       type: "sale",
       _id: sale._id,
+      total: sale.totalAmount,
       totalAmount: sale.totalAmount,
       items: sale.items,
       paymentStatus: isCreditSale ? "not_paid" : "paid",
@@ -373,7 +398,10 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
     groupedByDate[dateKey].sales.push({
       type: "payment",
       _id: payment._id,
+      total: payment.amount,
       totalAmount: payment.amount,
+      items: null,
+      paymentStatus: "paid",
       paymentMethod: payment.method,
       note: payment.note,
       ledgerId: payment.ledgerId?._id || null,
