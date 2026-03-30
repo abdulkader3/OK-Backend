@@ -343,7 +343,7 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
   const groupedByDate = {};
 
   sales.forEach((sale) => {
-    const dateKey = sale.createdAt.toISOString().split("T")[0];
+    const dateKey = new Date(sale.createdAt).toLocaleDateString("en-CA");
 
     if (!groupedByDate[dateKey]) {
       groupedByDate[dateKey] = {
@@ -382,7 +382,7 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
   });
 
   filteredPayments.forEach((payment) => {
-    const dateKey = payment.recordedAt.toISOString().split("T")[0];
+    const dateKey = new Date(payment.recordedAt).toLocaleDateString("en-CA");
 
     if (!groupedByDate[dateKey]) {
       groupedByDate[dateKey] = {
