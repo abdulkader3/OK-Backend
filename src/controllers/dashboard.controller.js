@@ -1,7 +1,7 @@
 import {
   Ledger,
   BigBossBill,
-  LedgerTransaction,
+  Payment,
   Sale,
   SalaryPayment,
 } from "../models/index.js";
@@ -53,25 +53,22 @@ const getMonthlySummary = asyncHandler(async (req, res, _next) => {
   const { startDate, endDate } = getMonthDateRange(parsedYear, parsedMonth);
 
   const ledgerOwedTotalPipeline = [
-    { $match: { ...ownerFilter, type: "owes_me" } },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: "$outstandingBalance" },
-      },
-    },
-  ];
-
-  const [ledgerTotalResult] = await Ledger.aggregate(ledgerOwedTotalPipeline);
-
-  const ledgerOwedMonthlyPipeline = [
     {
       $match: {
-        ownerId: userId,
-        type: "owes_me",
-        transactionDate: { $gte: startDate, $lte: endDate },
+        ...ownerFilter,
+        type: "payment",
       },
     },
+    {
+      $lookup: {
+        from: "ledgers",
+        localField: "ledgerId",
+        foreignField: "_id",
+        as: "ledger",
+      },
+    },
+    { $unwind: "$ledger" },
+    { $match: { "ledger.type": "owes_me" } },
     {
       $group: {
         _id: null,
@@ -80,7 +77,35 @@ const getMonthlySummary = asyncHandler(async (req, res, _next) => {
     },
   ];
 
-  const [ledgerMonthlyResult] = await LedgerTransaction.aggregate(
+  const [ledgerTotalResult] = await Payment.aggregate(ledgerOwedTotalPipeline);
+
+  const ledgerOwedMonthlyPipeline = [
+    {
+      $match: {
+        ...ownerFilter,
+        type: "payment",
+        recordedAt: { $gte: startDate, $lte: endDate },
+      },
+    },
+    {
+      $lookup: {
+        from: "ledgers",
+        localField: "ledgerId",
+        foreignField: "_id",
+        as: "ledger",
+      },
+    },
+    { $unwind: "$ledger" },
+    { $match: { "ledger.type": "owes_me" } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$amount" },
+      },
+    },
+  ];
+
+  const [ledgerMonthlyResult] = await Payment.aggregate(
     ledgerOwedMonthlyPipeline
   );
 
@@ -187,27 +212,22 @@ const getMonthlyHistory = asyncHandler(async (req, res, _next) => {
       const { startDate, endDate } = getMonthDateRange(year, month);
 
       const ledgerOwedTotalPipeline = [
-        { $match: { ...ownerFilter, type: "owes_me" } },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: "$outstandingBalance" },
-          },
-        },
-      ];
-
-      const [ledgerTotalResult] = await Ledger.aggregate(
-        ledgerOwedTotalPipeline
-      );
-
-      const ledgerOwedMonthlyPipeline = [
         {
           $match: {
-            ownerId: userId,
-            type: "owes_me",
-            transactionDate: { $gte: startDate, $lte: endDate },
+            ...ownerFilter,
+            type: "payment",
           },
         },
+        {
+          $lookup: {
+            from: "ledgers",
+            localField: "ledgerId",
+            foreignField: "_id",
+            as: "ledger",
+          },
+        },
+        { $unwind: "$ledger" },
+        { $match: { "ledger.type": "owes_me" } },
         {
           $group: {
             _id: null,
@@ -216,7 +236,37 @@ const getMonthlyHistory = asyncHandler(async (req, res, _next) => {
         },
       ];
 
-      const [ledgerMonthlyResult] = await LedgerTransaction.aggregate(
+      const [ledgerTotalResult] = await Payment.aggregate(
+        ledgerOwedTotalPipeline
+      );
+
+      const ledgerOwedMonthlyPipeline = [
+        {
+          $match: {
+            ...ownerFilter,
+            type: "payment",
+            recordedAt: { $gte: startDate, $lte: endDate },
+          },
+        },
+        {
+          $lookup: {
+            from: "ledgers",
+            localField: "ledgerId",
+            foreignField: "_id",
+            as: "ledger",
+          },
+        },
+        { $unwind: "$ledger" },
+        { $match: { "ledger.type": "owes_me" } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ];
+
+      const [ledgerMonthlyResult] = await Payment.aggregate(
         ledgerOwedMonthlyPipeline
       );
 

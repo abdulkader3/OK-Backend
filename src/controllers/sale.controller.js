@@ -249,27 +249,55 @@ const getSaleById = asyncHandler(async (req, res, _next) => {
 
 const getSalesByDate = asyncHandler(async (req, res, _next) => {
   const { dateFrom, dateTo } = req.query;
+  const ownerId = req.user.ownerId || req.user._id;
 
-  const filter = {
-    ownerId: req.user.ownerId || req.user._id,
+  const salesFilter = {
+    ownerId,
     deleted: false,
   };
 
   if (dateFrom || dateTo) {
-    filter.createdAt = {};
+    salesFilter.createdAt = {};
     if (dateFrom) {
-      filter.createdAt.$gte = new Date(dateFrom);
+      salesFilter.createdAt.$gte = new Date(dateFrom);
     }
     if (dateTo) {
       const toDate = new Date(dateTo);
       toDate.setHours(23, 59, 59, 999);
-      filter.createdAt.$lte = toDate;
+      salesFilter.createdAt.$lte = toDate;
     }
   }
 
-  const sales = await Sale.find(filter)
+  const sales = await Sale.find(salesFilter)
     .sort({ createdAt: -1 })
     .populate("ledgerId", "counterpartyName outstandingBalance");
+
+  const paymentFilter = {
+    ownerId,
+    type: "payment",
+  };
+
+  if (dateFrom || dateTo) {
+    paymentFilter.recordedAt = {};
+    if (dateFrom) {
+      paymentFilter.recordedAt.$gte = new Date(dateFrom);
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      paymentFilter.recordedAt.$lte = toDate;
+    }
+  }
+
+  const payments = await Payment.find(paymentFilter)
+    .sort({ recordedAt: -1 })
+    .populate({
+      path: "ledgerId",
+      select: "counterpartyName type",
+      match: { type: "owes_me" },
+    });
+
+  const filteredPayments = payments.filter((p) => p.ledgerId !== null);
 
   const groupedByDate = {};
 
@@ -279,17 +307,18 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
     if (!groupedByDate[dateKey]) {
       groupedByDate[dateKey] = {
         date: dateKey,
-        sales: [],
+        entries: [],
         totalAmount: 0,
         transactionCount: 0,
-        paidCount: 0,
-        unpaidCount: 0,
+        salesCount: 0,
+        paymentsCount: 0,
       };
     }
 
     const isCreditSale = !!sale.ledgerId;
 
-    groupedByDate[dateKey].sales.push({
+    groupedByDate[dateKey].entries.push({
+      type: "sale",
       _id: sale._id,
       totalAmount: sale.totalAmount,
       items: sale.items,
@@ -302,24 +331,55 @@ const getSalesByDate = asyncHandler(async (req, res, _next) => {
 
     groupedByDate[dateKey].totalAmount += sale.totalAmount;
     groupedByDate[dateKey].transactionCount += 1;
+    groupedByDate[dateKey].salesCount += 1;
+  });
 
-    if (isCreditSale) {
-      groupedByDate[dateKey].unpaidCount += 1;
-    } else {
-      groupedByDate[dateKey].paidCount += 1;
+  filteredPayments.forEach((payment) => {
+    const dateKey = payment.recordedAt.toISOString().split("T")[0];
+
+    if (!groupedByDate[dateKey]) {
+      groupedByDate[dateKey] = {
+        date: dateKey,
+        entries: [],
+        totalAmount: 0,
+        transactionCount: 0,
+        salesCount: 0,
+        paymentsCount: 0,
+      };
     }
+
+    groupedByDate[dateKey].entries.push({
+      type: "payment",
+      _id: payment._id,
+      totalAmount: payment.amount,
+      paymentMethod: payment.method,
+      note: payment.note,
+      ledgerId: payment.ledgerId?._id || null,
+      ledgerName: payment.ledgerId?.counterpartyName || null,
+      createdAt: payment.recordedAt,
+    });
+
+    groupedByDate[dateKey].totalAmount += payment.amount;
+    groupedByDate[dateKey].transactionCount += 1;
+    groupedByDate[dateKey].paymentsCount += 1;
   });
 
   const result = Object.values(groupedByDate).sort(
     (a, b) => new Date(b.date) - new Date(a.date)
   );
 
+  result.forEach((day) => {
+    day.entries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  });
+
   res.status(200).json({
     success: true,
     data: {
       groupedSales: result,
-      totalTransactions: sales.length,
-      totalAmount: sales.reduce((sum, s) => sum + s.totalAmount, 0),
+      totalTransactions: sales.length + filteredPayments.length,
+      totalAmount:
+        sales.reduce((sum, s) => sum + s.totalAmount, 0) +
+        filteredPayments.reduce((sum, p) => sum + p.amount, 0),
     },
   });
 });
