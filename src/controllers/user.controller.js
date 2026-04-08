@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
+import jwt from "jsonwebtoken";
 import { User, AuditLog } from "../models/index.js";
 import { ApiErrors } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandlers.js";
@@ -47,6 +48,48 @@ const getUserById = asyncHandler(async (req, res, _next) => {
     success: true,
     data: { user },
   });
+});
+
+const getCurrentUser = asyncHandler(async (req, res, _next) => {
+  const user = await User.findById(req.user._id);
+
+  if (!user) {
+    throw new ApiErrors(404, "User not found");
+  }
+
+  const accessToken = jwt.sign(
+    { id: user._id },
+    process.env.ACCESS_TOKEN_SECRET,
+    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "1d" }
+  );
+
+  const refreshToken = jwt.sign(
+    { id: user._id },
+    process.env.REFRESH_TOKEN_SECRET,
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "10d" }
+  );
+
+  user.refreshToken = refreshToken;
+  await user.save();
+
+  const options = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+  };
+
+  res
+    .status(200)
+    .cookie("refreshToken", refreshToken, options)
+    .cookie("accessToken", accessToken, options)
+    .json({
+      success: true,
+      data: {
+        user: user.toJSON(),
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      },
+    });
 });
 
 const updateProfile = asyncHandler(async (req, res, _next) => {
@@ -202,6 +245,7 @@ const deactivateUser = asyncHandler(async (req, res, _next) => {
 export {
   getAllUsers,
   getUserById,
+  getCurrentUser,
   updateUserPermissions,
   deactivateUser,
   updateProfile,

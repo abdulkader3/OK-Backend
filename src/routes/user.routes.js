@@ -3,6 +3,7 @@ import multer from "multer";
 import {
   getAllUsers,
   getUserById,
+  getCurrentUser,
   updateUserPermissions,
   deactivateUser,
   updateProfile,
@@ -29,6 +30,7 @@ const upload = multer({
 router.use(authenticate);
 
 router.get("/", requireAdmin, getAllUsers);
+router.get("/me", getCurrentUser);
 router.get("/:id", getUserById);
 router.patch("/me", upload.single("profileImage"), updateProfile);
 router.patch("/:id/permissions", requireAdmin, updateUserPermissions);
