@@ -83,6 +83,10 @@ const getLedgers = asyncHandler(async (req, res, _next) => {
     );
   }
 
+  if (req.query.search) {
+    filter.counterpartyName = { $regex: req.query.search, $options: "i" };
+  }
+
   const ledgers = await Ledger.find(filter)
     .sort({ createdAt: -1 })
     .skip(skip)
