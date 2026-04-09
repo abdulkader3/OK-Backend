@@ -31,21 +31,23 @@ const createLedger = asyncHandler(async (req, res, _next) => {
     outstandingBalance: initialAmount,
   });
 
-  await Payment.create({
-    ownerId: ledger.ownerId,
-    ledgerId: ledger._id,
-    amount: initialAmount,
-    type: "adjustment",
-    method: "other",
-    note: "Initial amount",
-    recordedBy: req.user._id,
-    recordedAt: ledger.createdAt,
-    previousOutstanding: 0,
-    newOutstanding: initialAmount,
-    idempotencyKey: `initial-${ledger._id}`,
-    offline: false,
-    syncStatus: "synced",
-  });
+  if (initialAmount > 0) {
+    await Payment.create({
+      ownerId: ledger.ownerId,
+      ledgerId: ledger._id,
+      amount: initialAmount,
+      type: "adjustment",
+      method: "other",
+      note: "Initial amount",
+      recordedBy: req.user._id,
+      recordedAt: ledger.createdAt,
+      previousOutstanding: 0,
+      newOutstanding: initialAmount,
+      idempotencyKey: `initial-${ledger._id}`,
+      offline: false,
+      syncStatus: "synced",
+    });
+  }
 
   await AuditLog.create({
     operation: "create",
